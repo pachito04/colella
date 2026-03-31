@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  PATIENT
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum AppointmentType {
+  PRESENTIAL
+  VIRTUAL
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String?
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  phoneNumber   String?         @unique
+  telegramId    String?         @unique
+  role          Role            @default(PATIENT)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  appointments  Appointment[]
+  enrollments   Enrollment[]
+  priceLogs     PriceLog[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+  @@id([identifier, token])
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  datetime        DateTime
+  status          AppointmentStatus @default(PENDING)
+  type            AppointmentType   @default(PRESENTIAL)
+  depositPaid     Boolean           @default(false)
+  paymentId       String?
+  calendarEventId String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  patientNotes    String?
+  medicalReportUrl String?
+  medicalFile     AppointmentFile?
+  meetLink        String?
+  reminder_level  Int               @default(0)
+
+  patientId String
+  patient   User @relation(fields: [patientId], references: [id])
+}
+
+model AppointmentFile {
+  id           String      @id @default(cuid())
+  fileName     String
+  originalName String
+  mimeType     String
+  size         Int
+  data         Bytes
+  createdAt    DateTime    @default(now())
+  appointmentId String     @unique
+  appointment  Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model BlockoutDate {
+  id        String   @id @default(cuid())
+  date      DateTime @unique
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  price       Decimal
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  id         String   @id @default(cuid())
+  userId     String
+  courseId   String
+  enrolledAt DateTime @default(now())
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+  @@unique([userId, courseId])
+}
+
+model GlobalSettings {
+  id                String   @id @default("settings")
+  currentPrice      Decimal  @default(40000)
+  sessionDuration   Int      @default(30)
+  depositPercentage Int      @default(50)
+  updatedAt         DateTime @updatedAt
+}
+
+model PriceLog {
+  id        String   @id @default(cuid())
+  price     Decimal
+  adminId   String
+  admin     User     @relation(fields: [adminId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model WorkSchedule {
+  id        String  @id @default(cuid())
+  dayOfWeek Int     @unique
+  startTime String
+  endTime   String
+  isActive  Boolean @default(true)
+}
+
+model AvailabilityOverride {
+  id        String   @id @default(cuid())
+  date      DateTime @unique
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+}
+
+model SuccessStory {
+  id          String   @id @default(cuid())
+  name        String
+  role        String
+  description String?
+  imageUrl    String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  author      String
+  content     String
+  rating      Int      @default(5)
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  phone      String
+  message    String
+  direction  String
+  channel    String   @default("wa")
+  created_at DateTime @default(now())
+}
+
+model SiteStats {
+  id          String   @id @default("stats")
+  stat1Value  Int      @default(500)
+  stat1Suffix String   @default("+")
+  stat1Label  String   @default("Clientes recuperados")
+  stat1Icon   String   @default("🏃")
+  stat2Value  Int      @default(1000)
+  stat2Suffix String   @default("+")
+  stat2Label  String   @default("Sesiones realizadas")
+  stat2Icon   String   @default("📅")
+  stat3Value  Int      @default(98)
+  stat3Suffix String   @default("%")
+  stat3Label  String   @default("Satisfacción de pacientes")
+  stat3Icon   String   @default("⭐")
+  stat4Value  Int      @default(10)
+  stat4Suffix String   @default("+")
+  stat4Label  String   @default("Años de experiencia")
+  stat4Icon   String   @default("🏆")
+  updatedAt   DateTime @updatedAt
+}

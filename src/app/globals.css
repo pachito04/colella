@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+@theme {
+  --color-brand-primary: #0d9488; /* teal-600 */
+  --color-brand-dark: #134e4a; /* teal-900 */
+  --color-brand-secondary: #2dd4bf; /* teal-400 */
+  --color-brand-accent: #f0fdfa; /* teal-50 */
+  
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Myriad Variable Concept', 'Plus Jakarta Sans', sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+}
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --popover: #0a0a0a;
+  --popover-foreground: #ededed;
+  --border: #262626;
+  --input: #262626;
+  --ring: #2dd4bf;
+  --accent: #262626;
+  --accent-foreground: #ededed;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --popover: #0a0a0a;
+  --popover-foreground: #ededed;
+  --border: #262626;
+  --input: #262626;
+  --ring: #2dd4bf;
+  --accent: #262626;
+  --accent-foreground: #ededed;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+@layer base {
+  button {
+    cursor: pointer;
+  }
+}
+
+/* Utilities */
+.text-balance {
+  text-wrap: balance;
+}
+
+@layer base {
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--foreground) !important;
+    -webkit-box-shadow: 0 0 0px 1000px var(--background) inset !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  input:focus, textarea:focus {
+    background-color: transparent !important;
+  }
+
+  /* React Day Picker Overrides */
+  .rdp-root {
+    --rdp-accent-color: var(--color-brand-primary) !important;
+    --rdp-accent-color-foreground: white !important;
+    --rdp-range_start-color: var(--color-brand-primary) !important;
+    --rdp-range_end-color: var(--color-brand-primary) !important;
+    --rdp-range_middle-color: var(--color-brand-accent) !important;
+    --rdp-selected-color: var(--color-brand-primary) !important;
+    --rdp-today-color: var(--color-brand-primary) !important;
+  }
+
+  .dark .rdp-root {
+    --rdp-accent-color: #2dd4bf !important;
+    --rdp-accent-color-foreground: #000 !important;
+  }
+}
+
