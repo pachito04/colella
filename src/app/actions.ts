@@ -197,7 +197,7 @@ export async function bookAppointment(formData: FormData) {
           originalName: string
           mimeType: string
           size: number
-          data: Uint8Array
+          data: Buffer
         }
       | null = null
 
