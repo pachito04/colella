@@ -325,12 +325,16 @@ export async function bookAppointment(formData: FormData) {
     if (medicalFileData) {
       const url = `/api/medical-files/${appointment.id}`
 
+      const fileDataForPrisma = {
+        ...medicalFileData,
+        data: medicalFileData.data as unknown as Uint8Array<ArrayBuffer>
+      }
       await prisma.appointmentFile.upsert({
         where: { appointmentId: appointment.id },
-        update: { ...medicalFileData },
+        update: { ...fileDataForPrisma },
         create: {
           appointmentId: appointment.id,
-          ...medicalFileData
+          ...fileDataForPrisma
         }
       })
 
