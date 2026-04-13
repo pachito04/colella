@@ -97,6 +97,15 @@ export function BookingWidget() {
     }
   }, [selectedDate])
 
+  // Fix: mantener la vista en la sección de pago al confirmar (no scrollear a reviews)
+  useEffect(() => {
+    if (step === 'confirmation') {
+      setTimeout(() => {
+        document.getElementById('booking')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 150)
+    }
+  }, [step])
+
   const handleSlotClick = (slot: string) => {
     if (status === 'unauthenticated') {
         // Trigger generic sign in, preserving state
