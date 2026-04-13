@@ -406,3 +406,67 @@ export async function deleteBlockoutDate(id: string) {
   await prisma.blockoutDate.delete({ where: { id } })
   revalidatePath('/admin/settings')
 }
+
+// --- Turnos Fijos Semanales ---
+export async function getRecurringSlots() {
+  await requireAdmin()
+  const slots = await prisma.recurringSlot.findMany({
+    where: { isActive: true },
+    include: { patient: { select: { id: true, name: true, email: true, phoneNumber: true } } },
+    orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }]
+  })
+  return slots.map((s: any) => ({
+    ...s,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+  }))
+}
+
+export async function createRecurringSlot(data: { dayOfWeek: number, startTime: string, patientId: string }) {
+  await requireAdmin()
+  const existing = await prisma.recurringSlot.findUnique({
+    where: { dayOfWeek_startTime: { dayOfWeek: data.dayOfWeek, startTime: data.startTime } }
+  })
+  if (existing && existing.isActive) {
+    throw new Error('Ya existe un turno fijo en ese día y horario')
+  }
+  if (existing && !existing.isActive) {
+    await prisma.recurringSlot.update({
+      where: { id: existing.id },
+      data: { patientId: data.patientId, isActive: true }
+    })
+  } else {
+    await prisma.recurringSlot.create({
+      data: { dayOfWeek: data.dayOfWeek, startTime: data.startTime, patientId: data.patientId }
+    })
+  }
+  revalidatePath('/admin/turnos-fijos')
+  revalidatePath('/')
+}
+
+export async function deleteRecurringSlot(id: string) {
+  await requireAdmin()
+  await prisma.recurringSlot.update({
+    where: { id },
+    data: { isActive: false }
+  })
+  revalidatePath('/admin/turnos-fijos')
+  revalidatePath('/')
+}
+
+export async function searchPatients(query: string) {
+  await requireAdmin()
+  if (!query || query.length < 2) return []
+  return await prisma.user.findMany({
+    where: {
+      role: 'PATIENT',
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        { email: { contains: query, mode: 'insensitive' } },
+        { phoneNumber: { contains: query } },
+      ]
+    },
+    select: { id: true, name: true, email: true, phoneNumber: true },
+    take: 10
+  })
+}

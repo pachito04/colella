@@ -3,16 +3,17 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { 
-  Calendar, 
-  Settings, 
-  Star, 
-  LayoutDashboard, 
+import {
+  Calendar,
+  Settings,
+  Star,
+  LayoutDashboard,
   ArrowLeft,
   User,
   Menu,
   Users,
-  BarChart2
+  BarChart2,
+  Repeat
 } from "lucide-react"
 import { LogoutButton } from "./LogoutButton"
 import { AdminMobileNav } from "./AdminMobileNav"
@@ -34,6 +35,7 @@ export default async function AdminLayout({
   const navItems = [
     { href: "/admin", label: "Agenda del Día", icon: Calendar },
     { href: "/admin/pacientes", label: "Pacientes", icon: Users },
+    { href: "/admin/turnos-fijos", label: "Turnos Fijos", icon: Repeat },
     { href: "/admin/stats", label: "Estadísticas Web", icon: BarChart2 },
     { href: "/admin/cms", label: "Casos de Éxito", icon: Star },
     { href: "/admin/settings", label: "Configuración General", icon: Settings },

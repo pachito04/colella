@@ -132,26 +132,44 @@ export async function getAvailability(dateStr: string) {
   const now = new Date()
   const expirationThreshold = subMinutes(now, RESERVATION_TIMEOUT_MINUTES)
 
-  const existingAppointments = await prisma.appointment.findMany({
-    where: {
-      datetime: {
-        gte: start,
-        lt: end
-      },
-      OR: [
-        { status: 'CONFIRMED' },
-        {
-          status: 'PENDING',
-          createdAt: { gte: expirationThreshold }
-        }
-      ]
-    }
-  })
+  const [existingAppointments, recurringSlots] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        datetime: {
+          gte: start,
+          lt: end
+        },
+        OR: [
+          { status: 'CONFIRMED' },
+          {
+            status: 'PENDING',
+            createdAt: { gte: expirationThreshold }
+          }
+        ]
+      }
+    }),
+    prisma.recurringSlot.findMany({
+      where: {
+        dayOfWeek: dayIndex,
+        isActive: true
+      }
+    })
+  ])
+
+  const recurringTimes = new Set(recurringSlots.map((rs: any) => rs.startTime))
 
   const isSlotFree = (slotDate: Date) => {
-    return !existingAppointments.some((app: any) =>
-      isEqual(app.datetime, slotDate)
-    )
+    // Check if taken by an existing appointment
+    if (existingAppointments.some((app: any) => isEqual(app.datetime, slotDate))) {
+      return false
+    }
+    // Check if blocked by a recurring fixed slot
+    const slotZoned = toZonedTime(slotDate, TIMEZONE)
+    const slotTime = `${String(slotZoned.getHours()).padStart(2, '0')}:${String(slotZoned.getMinutes()).padStart(2, '0')}`
+    if (recurringTimes.has(slotTime)) {
+      return false
+    }
+    return true
   }
 
   const slots = []
