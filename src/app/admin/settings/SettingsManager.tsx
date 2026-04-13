@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { updateGlobalSettings, updateWorkSchedule, addAvailabilityOverride, deleteAvailabilityOverride, addBlockoutDate, deleteBlockoutDate } from '../actions'
+import { updateGlobalSettings, updateWorkSchedule, addAvailabilityOverride, deleteAvailabilityOverride, addBlockoutDate, deleteBlockoutDate, getBlockoutSlots, addBlockoutSlot, deleteBlockoutSlot } from '../actions'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
@@ -34,16 +34,25 @@ type Blockout = {
     reason?: string | null
 }
 
-export function SettingsManager({ 
-    initialSettings, 
-    initialSchedule, 
+type BlockoutSlotType = {
+    id: string
+    date: string
+    startTime: string
+    reason?: string | null
+}
+
+export function SettingsManager({
+    initialSettings,
+    initialSchedule,
     initialOverrides,
-    initialBlockoutDates 
-}: { 
-    initialSettings: Settings, 
+    initialBlockoutDates,
+    initialBlockoutSlots = []
+}: {
+    initialSettings: Settings,
     initialSchedule: Schedule[],
     initialOverrides: Override[],
-    initialBlockoutDates: Blockout[]
+    initialBlockoutDates: Blockout[],
+    initialBlockoutSlots?: BlockoutSlotType[]
 }) {
     const router = useRouter()
     
@@ -145,6 +154,33 @@ export function SettingsManager({
          router.refresh()
     }
 
+
+    // -- Blockout Slots (horarios específicos) --
+    const [blockoutSlots, setBlockoutSlots] = useState(initialBlockoutSlots)
+    const [newSlotDate, setNewSlotDate] = useState('')
+    const [newSlotTime, setNewSlotTime] = useState('')
+    const [newSlotReason, setNewSlotReason] = useState('')
+
+    const handleAddBlockoutSlot = async () => {
+        if (!newSlotDate || !newSlotTime) return
+        const [year, month, day] = newSlotDate.split('-').map(Number)
+        const localDate = new Date(year, month - 1, day)
+        try {
+            await addBlockoutSlot({ date: localDate, startTime: newSlotTime, reason: newSlotReason || undefined })
+            setBlockoutSlots(prev => [...prev, { id: 'temp-' + Date.now(), date: newSlotDate, startTime: newSlotTime, reason: newSlotReason || null }])
+            setNewSlotDate('')
+            setNewSlotTime('')
+            setNewSlotReason('')
+            router.refresh()
+        } catch (err: any) { alert(err.message || 'Error') }
+    }
+
+    const handleDeleteBlockoutSlot = async (id: string) => {
+        if (!confirm('Eliminar bloqueo de horario?')) return
+        setBlockoutSlots(prev => prev.filter(s => s.id !== id))
+        await deleteBlockoutSlot(id)
+        router.refresh()
+    }
 
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const dateStr = e.target.value
@@ -402,6 +438,47 @@ export function SettingsManager({
                                 <p className="text-gray-400 italic text-sm">No hay días bloqueados.</p>
                             )}
                          </div>
+                    </div>
+
+                    <div>
+                        <h3 className="font-semibold mb-2 text-orange-600 dark:text-orange-400">Bloquear Horarios Puntuales</h3>
+                        <p className="text-xs text-gray-500 mb-3">Bloquea un horario especifico sin bloquear todo el dia.</p>
+                        <div className="space-y-2">
+                            {blockoutSlots.map(bs => (
+                                <div key={bs.id} className="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-100 dark:border-orange-900/30">
+                                    <div className="flex gap-4 items-center">
+                                        <div className="h-2 w-2 rounded-full bg-orange-500"></div>
+                                        <span className="font-bold">
+                                            {(() => {
+                                                const d = new Date(bs.date + (bs.date.includes('T') ? '' : 'T12:00:00'))
+                                                return format(d, 'dd/MM/yyyy')
+                                            })()}
+                                        </span>
+                                        <span className="font-semibold text-orange-700 dark:text-orange-300">{bs.startTime} hs</span>
+                                        <span className="text-sm text-gray-600 dark:text-gray-400">{bs.reason || 'Sin motivo'}</span>
+                                    </div>
+                                    <Button variant="ghost" size="sm" className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
+                                        onClick={() => handleDeleteBlockoutSlot(bs.id)}>
+                                        Eliminar
+                                    </Button>
+                                </div>
+                            ))}
+                            {blockoutSlots.length === 0 && (
+                                <p className="text-gray-400 italic text-sm">No hay horarios bloqueados.</p>
+                            )}
+                        </div>
+                        <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                            <input type="date" value={newSlotDate} onChange={e => setNewSlotDate(e.target.value)}
+                                className="flex-1 p-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm" />
+                            <input type="time" value={newSlotTime} onChange={e => setNewSlotTime(e.target.value)}
+                                className="w-28 p-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm" />
+                            <input type="text" value={newSlotReason} onChange={e => setNewSlotReason(e.target.value)}
+                                placeholder="Motivo (opcional)" className="flex-1 p-2.5 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm" />
+                            <Button size="sm" className="bg-orange-600 hover:bg-orange-700 text-white rounded-lg"
+                                onClick={handleAddBlockoutSlot} disabled={!newSlotDate || !newSlotTime}>
+                                Bloquear Horario
+                            </Button>
+                        </div>
                     </div>
 
                 </div>

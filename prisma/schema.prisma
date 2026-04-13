@@ -160,16 +160,36 @@ model WorkSchedule {
 }
 
 model RecurringSlot {
-  id              String   @id @default(cuid())
-  dayOfWeek       Int      // 0=Domingo...6=Sábado
-  startTime       String   // "15:00"
+  id              String                  @id @default(cuid())
+  dayOfWeek       Int                     // 0=Domingo...6=Sábado
+  startTime       String                  // "15:00"
   patientId       String
-  patient         User     @relation(fields: [patientId], references: [id])
-  isActive        Boolean  @default(true)
+  patient         User                    @relation(fields: [patientId], references: [id])
+  isActive        Boolean                 @default(true)
   calendarEventId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  exceptions      RecurringSlotException[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
   @@unique([dayOfWeek, startTime])
+}
+
+model RecurringSlotException {
+  id              String        @id @default(cuid())
+  recurringSlotId String
+  recurringSlot   RecurringSlot @relation(fields: [recurringSlotId], references: [id], onDelete: Cascade)
+  date            DateTime
+  reason          String?
+  createdAt       DateTime      @default(now())
+  @@unique([recurringSlotId, date])
+}
+
+model BlockoutSlot {
+  id        String   @id @default(cuid())
+  date      DateTime
+  startTime String
+  reason    String?
+  createdAt DateTime @default(now())
+  @@unique([date, startTime])
 }
 
 model AvailabilityOverride {
