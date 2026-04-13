@@ -430,26 +430,70 @@ export async function createRecurringSlot(data: { dayOfWeek: number, startTime: 
   if (existing && existing.isActive) {
     throw new Error('Ya existe un turno fijo en ese día y horario')
   }
+
+  const patient = await prisma.user.findUnique({ where: { id: data.patientId }, select: { name: true } })
+
+  let slot
   if (existing && !existing.isActive) {
-    await prisma.recurringSlot.update({
+    slot = await prisma.recurringSlot.update({
       where: { id: existing.id },
-      data: { patientId: data.patientId, isActive: true }
+      data: { patientId: data.patientId, isActive: true, calendarEventId: null }
     })
   } else {
-    await prisma.recurringSlot.create({
+    slot = await prisma.recurringSlot.create({
       data: { dayOfWeek: data.dayOfWeek, startTime: data.startTime, patientId: data.patientId }
     })
   }
+
+  // Sincronizar con Google Calendar via n8n
+  const settings = await prisma.globalSettings.findUnique({ where: { id: 'settings' } })
+  const webhookUrl = process.env.N8N_WEBHOOK_URL?.replace(/\/[^/]*$/, '/recurring-slot-sync')
+    || 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+  try {
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create',
+        slotId: slot.id,
+        dayOfWeek: data.dayOfWeek,
+        startTime: data.startTime,
+        patientName: patient?.name || 'Paciente',
+        sessionDuration: settings?.sessionDuration || 30,
+      })
+    }).catch(err => console.error('n8n Calendar Sync Error:', err))
+  } catch (e) { console.error('n8n Calendar Sync Error:', e) }
+
   revalidatePath('/admin/turnos-fijos')
   revalidatePath('/')
 }
 
 export async function deleteRecurringSlot(id: string) {
   await requireAdmin()
+  const slot = await prisma.recurringSlot.findUnique({ where: { id } })
+
   await prisma.recurringSlot.update({
     where: { id },
     data: { isActive: false }
   })
+
+  // Eliminar evento de Google Calendar via n8n
+  if (slot?.calendarEventId) {
+    const webhookUrl = process.env.N8N_WEBHOOK_URL?.replace(/\/[^/]*$/, '/recurring-slot-sync')
+      || 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    try {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          slotId: id,
+          calendarEventId: slot.calendarEventId,
+        })
+      }).catch(err => console.error('n8n Calendar Delete Error:', err))
+    } catch (e) { console.error('n8n Calendar Delete Error:', e) }
+  }
+
   revalidatePath('/admin/turnos-fijos')
   revalidatePath('/')
 }
