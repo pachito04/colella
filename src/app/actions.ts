@@ -132,7 +132,7 @@ export async function getAvailability(dateStr: string) {
   const now = new Date()
   const expirationThreshold = subMinutes(now, RESERVATION_TIMEOUT_MINUTES)
 
-  const [existingAppointments, recurringSlots] = await Promise.all([
+  const [existingAppointments, recurringSlots, blockoutSlots] = await Promise.all([
     prisma.appointment.findMany({
       where: {
         datetime: {
@@ -152,21 +152,51 @@ export async function getAvailability(dateStr: string) {
       where: {
         dayOfWeek: dayIndex,
         isActive: true
+      },
+      include: {
+        exceptions: {
+          where: {
+            date: {
+              gte: startUtc,
+              lte: endUtc
+            }
+          }
+        }
+      }
+    }),
+    prisma.blockoutSlot.findMany({
+      where: {
+        date: {
+          gte: startUtc,
+          lte: endUtc
+        }
       }
     })
   ])
 
-  const recurringTimes = new Set(recurringSlots.map((rs: any) => rs.startTime))
+  // Turnos fijos activos, excluyendo los que tienen excepción para este día
+  const recurringTimes = new Set(
+    recurringSlots
+      .filter((rs: any) => rs.exceptions.length === 0)
+      .map((rs: any) => rs.startTime)
+  )
+
+  // Horarios bloqueados puntualmente para este día
+  const blockedTimes = new Set(blockoutSlots.map((bs: any) => bs.startTime))
 
   const isSlotFree = (slotDate: Date) => {
     // Check if taken by an existing appointment
     if (existingAppointments.some((app: any) => isEqual(app.datetime, slotDate))) {
       return false
     }
-    // Check if blocked by a recurring fixed slot
     const slotZoned = toZonedTime(slotDate, TIMEZONE)
     const slotTime = `${String(slotZoned.getHours()).padStart(2, '0')}:${String(slotZoned.getMinutes()).padStart(2, '0')}`
+    // Check if blocked by a recurring fixed slot (without exception for this date)
     if (recurringTimes.has(slotTime)) {
+      return false
+    }
+    // Check if blocked by a specific hour blockout
+    if (blockedTimes.has(slotTime)) {
       return false
     }
     return true

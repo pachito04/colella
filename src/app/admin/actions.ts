@@ -514,3 +514,70 @@ export async function searchPatients(query: string) {
     take: 10
   })
 }
+
+// --- Excepciones de Turnos Fijos ---
+export async function addRecurringSlotException(data: { recurringSlotId: string, date: Date, reason?: string }) {
+  await requireAdmin()
+  await prisma.recurringSlotException.create({
+    data: {
+      recurringSlotId: data.recurringSlotId,
+      date: data.date,
+      reason: data.reason || null,
+    }
+  })
+  revalidatePath('/admin/turnos-fijos')
+  revalidatePath('/')
+}
+
+export async function deleteRecurringSlotException(id: string) {
+  await requireAdmin()
+  await prisma.recurringSlotException.delete({ where: { id } })
+  revalidatePath('/admin/turnos-fijos')
+  revalidatePath('/')
+}
+
+export async function getRecurringSlotExceptions(recurringSlotId: string) {
+  await requireAdmin()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return await prisma.recurringSlotException.findMany({
+    where: { recurringSlotId, date: { gte: today } },
+    orderBy: { date: 'asc' }
+  })
+}
+
+// --- Bloqueo de Horarios Específicos ---
+export async function getBlockoutSlots() {
+  await requireAdmin()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const slots = await prisma.blockoutSlot.findMany({
+    where: { date: { gte: today } },
+    orderBy: [{ date: 'asc' }, { startTime: 'asc' }]
+  })
+  return slots.map((s: any) => ({
+    ...s,
+    date: s.date.toISOString(),
+    createdAt: s.createdAt.toISOString(),
+  }))
+}
+
+export async function addBlockoutSlot(data: { date: Date, startTime: string, reason?: string }) {
+  await requireAdmin()
+  await prisma.blockoutSlot.create({
+    data: {
+      date: data.date,
+      startTime: data.startTime,
+      reason: data.reason || null,
+    }
+  })
+  revalidatePath('/admin/settings')
+  revalidatePath('/')
+}
+
+export async function deleteBlockoutSlot(id: string) {
+  await requireAdmin()
+  await prisma.blockoutSlot.delete({ where: { id } })
+  revalidatePath('/admin/settings')
+  revalidatePath('/')
+}
