@@ -322,7 +322,15 @@ export async function getGlobalSettings() {
   return settings
 }
 
-export async function updateGlobalSettings(data: { currentPrice: number, sessionDuration: number, depositPercentage: number }) {
+export async function updateGlobalSettings(data: {
+  currentPrice: number,
+  sessionDuration: number,
+  depositPercentage: number,
+  paymentAlias?: string | null,
+  paymentCbu?: string | null,
+  paymentHolder?: string | null,
+  vacationMessage?: string | null,
+}) {
   const user = await requireAdmin()
   const settings = await getGlobalSettings()
   if (Number(settings.currentPrice) !== data.currentPrice) {
@@ -330,7 +338,15 @@ export async function updateGlobalSettings(data: { currentPrice: number, session
   }
   await prisma.globalSettings.update({
     where: { id: 'settings' },
-    data: { currentPrice: data.currentPrice, sessionDuration: data.sessionDuration, depositPercentage: data.depositPercentage }
+    data: {
+      currentPrice: data.currentPrice,
+      sessionDuration: data.sessionDuration,
+      depositPercentage: data.depositPercentage,
+      paymentAlias: data.paymentAlias ?? null,
+      paymentCbu: data.paymentCbu ?? null,
+      paymentHolder: data.paymentHolder ?? null,
+      vacationMessage: data.vacationMessage ?? null,
+    }
   })
   revalidatePath('/admin/settings')
   revalidatePath('/booking')
@@ -392,6 +408,49 @@ export async function getBlockoutDates() {
 
 export async function addBlockoutDate(date: Date, reason?: string) {
   await requireAdmin()
+
+  // Buscar turnos confirmados en este día ANTES de crear el blockout
+  const startOfDay = new Date(date)
+  startOfDay.setHours(0, 0, 0, 0)
+  const endOfDay = new Date(date)
+  endOfDay.setHours(23, 59, 59, 999)
+
+  const affectedAppointments = await prisma.appointment.findMany({
+    where: {
+      datetime: { gte: startOfDay, lte: endOfDay },
+      status: { in: ['CONFIRMED', 'PENDING'] }
+    },
+    include: { patient: true }
+  })
+
+  // Cancelar los turnos afectados
+  if (affectedAppointments.length > 0) {
+    await prisma.appointment.updateMany({
+      where: { id: { in: affectedAppointments.map(a => a.id) } },
+      data: { status: 'CANCELLED' }
+    })
+
+    // Notificar a cada paciente via n8n (webhook "day-blocked-notify")
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/day-blocked-notify'
+    for (const app of affectedAppointments) {
+      if (app.patient?.phoneNumber) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'day_blocked',
+            appointmentId: app.id,
+            patientName: app.patient.name || 'Paciente',
+            phone: app.patient.phoneNumber,
+            email: app.patient.email || '',
+            originalDatetime: app.datetime.toISOString(),
+            reason: reason || 'Dia bloqueado',
+          })
+        }).catch(err => console.error('n8n day blocked notify error:', err))
+      }
+    }
+  }
+
   const blockout = await prisma.blockoutDate.upsert({
     where: { date },
     update: { reason },
@@ -447,10 +506,9 @@ export async function createRecurringSlot(data: { dayOfWeek: number, startTime: 
 
   // Sincronizar con Google Calendar via n8n
   const settings = await prisma.globalSettings.findUnique({ where: { id: 'settings' } })
-  const webhookUrl = process.env.N8N_WEBHOOK_URL?.replace(/\/[^/]*$/, '/recurring-slot-sync')
-    || 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+  const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
   try {
-    fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -461,7 +519,8 @@ export async function createRecurringSlot(data: { dayOfWeek: number, startTime: 
         patientName: patient?.name || 'Paciente',
         sessionDuration: settings?.sessionDuration || 30,
       })
-    }).catch(err => console.error('n8n Calendar Sync Error:', err))
+    })
+    console.log('[CalendarSync Create]', res.status)
   } catch (e) { console.error('n8n Calendar Sync Error:', e) }
 
   revalidatePath('/admin/turnos-fijos')
@@ -479,10 +538,9 @@ export async function deleteRecurringSlot(id: string) {
 
   // Eliminar evento de Google Calendar via n8n
   if (slot?.calendarEventId) {
-    const webhookUrl = process.env.N8N_WEBHOOK_URL?.replace(/\/[^/]*$/, '/recurring-slot-sync')
-      || 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
     try {
-      fetch(webhookUrl, {
+      const res = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -490,7 +548,8 @@ export async function deleteRecurringSlot(id: string) {
           slotId: id,
           calendarEventId: slot.calendarEventId,
         })
-      }).catch(err => console.error('n8n Calendar Delete Error:', err))
+      })
+      console.log('[CalendarSync Delete]', res.status)
     } catch (e) { console.error('n8n Calendar Delete Error:', e) }
   }
 

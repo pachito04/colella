@@ -1,0 +1,30 @@
+{
+  "name": "Lic. Federico Colella - Kinesiologia",
+  "short_name": "Colella Kine",
+  "description": "Turnos de kinesiologia y terapia manual con el Lic. Federico Colella",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0d9488",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/assets/logo/iso_sobre_color.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/logo/iso_sobre_color.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/logo/iso_sobre_blanco.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "maskable"
+    }
+  ]
+}

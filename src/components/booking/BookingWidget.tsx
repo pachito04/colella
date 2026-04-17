@@ -48,6 +48,16 @@ export function BookingWidget() {
   const [isExpired, setIsExpired] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [appointmentType, setAppointmentType] = useState<'PRESENTIAL' | 'VIRTUAL'>('PRESENTIAL')
+  const [userTimezone, setUserTimezone] = useState<string>('America/Argentina/Buenos_Aires')
+
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (tz) setUserTimezone(tz)
+    } catch {}
+  }, [])
+
+  const isDifferentTz = userTimezone !== 'America/Argentina/Buenos_Aires'
   
   // Dynamic Config State
   const [errors, setErrors] = useState<{ name?: string, phone?: string }>({})
@@ -328,9 +338,20 @@ export function BookingWidget() {
                             </div>
                         ) : (
                             <div className="flex flex-col gap-4 h-full">
+                                {isDifferentTz && (
+                                    <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 leading-relaxed">
+                                        <span className="font-bold">📍 Tu zona horaria: {userTimezone}</span>
+                                        <br />
+                                        Los horarios se muestran en tu hora local. En el consultorio son hora Argentina (ARG).
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-2 max-h-[340px]">
-                                    {slots.map((slot, index) => (
-                                        <button 
+                                    {slots.map((slot, index) => {
+                                      const d = new Date(slot)
+                                      const localTime = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })
+                                      const argTime = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires' })
+                                      return (
+                                        <button
                                             key={`${slot}-${index}`}
                                             onClick={() => handleSlotClick(slot)}
                                             className={cn(
@@ -340,11 +361,15 @@ export function BookingWidget() {
                                             )}
                                         >
                                             <span className="text-lg font-bold text-gray-200 group-hover:text-teal-400">
-                                              {format(new Date(slot), 'HH:mm')}
+                                              {localTime}
                                             </span>
+                                            {isDifferentTz && (
+                                              <span className="block text-[10px] text-neutral-500 mt-0.5">{argTime} ARG</span>
+                                            )}
                                             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </button>
-                                    ))}
+                                      )
+                                    })}
                                 </div>
                                 <div className="mt-auto pt-4 p-4 rounded-[1.5rem] bg-teal-500/5 border border-teal-500/10 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
@@ -375,13 +400,18 @@ export function BookingWidget() {
                                 <h3 className="text-xl font-bold font-display tracking-tight text-white">
                                   3. Tus Datos
                                 </h3>
-                                <div className="mt-1 flex gap-3 text-[10px] font-black uppercase tracking-[0.1em] text-neutral-500">
+                                <div className="mt-1 flex flex-wrap gap-3 text-[10px] font-black uppercase tracking-[0.1em] text-neutral-500">
                                    <span className="flex items-center gap-1">
                                       {selectedDate && format(selectedDate, 'dd/MM/yy')}
                                    </span>
                                    <span>•</span>
                                    <span className="flex items-center gap-1">
-                                      {selectedSlot && format(new Date(selectedSlot), 'HH:mm')} HS
+                                      {selectedSlot && new Date(selectedSlot).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })} HS
+                                      {isDifferentTz && selectedSlot && (
+                                        <span className="text-neutral-600 ml-1 normal-case font-medium">
+                                          ({new Date(selectedSlot).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires' })} ARG)
+                                        </span>
+                                      )}
                                    </span>
                                 </div>
                               </div>
@@ -490,21 +520,35 @@ export function BookingWidget() {
                                          <span className="text-sm text-neutral-400 font-medium">Valor de la sesión</span>
                                          <span className="text-lg font-bold text-white">${config.price.toLocaleString('es-AR')}</span>
                                      </div>
-                                     <div className="flex justify-between items-center">
-                                         <div className="flex flex-col">
-                                             <span className="text-sm text-neutral-400 font-medium">Seña (a pagar ahora)</span>
-                                             <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Asegura tu lugar</span>
+                                     {appointmentType === 'VIRTUAL' ? (
+                                       <div className="flex justify-between items-center">
+                                           <div className="flex flex-col">
+                                               <span className="text-sm text-neutral-400 font-medium">Pago completo (a pagar ahora)</span>
+                                               <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Sesión virtual - pago anticipado</span>
+                                           </div>
+                                           <span className="text-lg font-bold text-teal-400">
+                                              ${config.price.toLocaleString('es-AR')}
+                                           </span>
+                                       </div>
+                                     ) : (
+                                       <>
+                                         <div className="flex justify-between items-center">
+                                             <div className="flex flex-col">
+                                                 <span className="text-sm text-neutral-400 font-medium">Seña (a pagar ahora)</span>
+                                                 <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Asegura tu lugar</span>
+                                             </div>
+                                             <span className="text-lg font-bold text-teal-400">
+                                                ${(config.price * (config.depositPercentage / 100)).toLocaleString('es-AR')}
+                                             </span>
                                          </div>
-                                         <span className="text-lg font-bold text-teal-400">
-                                            ${(config.price * (config.depositPercentage / 100)).toLocaleString('es-AR')}
-                                         </span>
-                                     </div>
-                                     <div className="pt-3 border-t border-neutral-800/50 flex justify-between items-center">
-                                         <span className="text-xs font-medium text-neutral-500 italic">El saldo restante se abona el día de la sesión</span>
-                                         <span className="text-xs font-bold text-neutral-500">
-                                            ${(config.price * (1 - config.depositPercentage / 100)).toLocaleString('es-AR')}
-                                         </span>
-                                     </div>
+                                         <div className="pt-3 border-t border-neutral-800/50 flex justify-between items-center">
+                                             <span className="text-xs font-medium text-neutral-500 italic">El saldo restante se abona el día de la sesión</span>
+                                             <span className="text-xs font-bold text-neutral-500">
+                                                ${(config.price * (1 - config.depositPercentage / 100)).toLocaleString('es-AR')}
+                                             </span>
+                                         </div>
+                                       </>
+                                     )}
                                  </div>
 
                                  <div className="space-y-6">
@@ -646,7 +690,7 @@ export function BookingWidget() {
                         <div className="w-full space-y-4">
                           {paymentUrl && !isExpired && (
                               <Button size="lg" className="h-16 w-full text-lg font-bold rounded-2xl shadow-2xl shadow-green-500/20 bg-green-600 hover:bg-green-700 active:scale-95 transition-transform text-white" onClick={() => window.open(paymentUrl, '_blank')}>
-                                  Pagar Seña con Mercado Pago
+                                  {appointmentType === 'VIRTUAL' ? 'Pagar con Mercado Pago' : 'Pagar Seña con Mercado Pago'}
                               </Button>
                           )}
                           

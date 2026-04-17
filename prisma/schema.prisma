@@ -140,6 +140,10 @@ model GlobalSettings {
   currentPrice      Decimal  @default(40000)
   sessionDuration   Int      @default(30)
   depositPercentage Int      @default(50)
+  paymentAlias      String?
+  paymentCbu        String?
+  paymentHolder     String?
+  vacationMessage   String?
   updatedAt         DateTime @updatedAt
 }
 

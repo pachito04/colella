@@ -20,15 +20,20 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Lic. Federico Colella | Kinesiología Deportiva",
   description: "Kinesiología Deportiva de Alto Rendimiento. Recuperación de lesiones y optimización del movimiento.",
+  manifest: '/manifest.json',
+  themeColor: '#0d9488',
   icons: {
     icon: '/assets/logo/iso_sobre_color.jpg',
-    apple: '/assets/logo/iso_sobre_color.jpg',
+    apple: [
+      { url: '/assets/logo/iso_sobre_color.jpg', sizes: '180x180', type: 'image/jpeg' },
+    ],
     shortcut: '/assets/logo/iso_sobre_color.jpg',
   },
   appleWebApp: {
     capable: true,
     title: 'Fede Colella',
     statusBarStyle: 'black-translucent',
+    startupImage: '/assets/logo/iso_sobre_color.jpg',
   },
   openGraph: {
     title: 'Lic. Federico Colella | Kinesiología Deportiva',
