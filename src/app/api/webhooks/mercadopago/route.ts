@@ -76,6 +76,11 @@ export async function POST(request: NextRequest) {
                 // Prepare data for n8n
                 const settings = await prisma.globalSettings.findUnique({ where: { id: 'settings' } });
                 const duration = settings?.sessionDuration || 30;
+                const price = Number(settings?.currentPrice || 40000);
+                const depositPct = settings?.depositPercentage || 50;
+                const isVirtual = freshAppointment.type === 'VIRTUAL';
+                const depositPaidAmount = isVirtual ? price : (price * depositPct / 100);
+                const remainingAmount = isVirtual ? 0 : (price - depositPaidAmount);
 
                 const appointmentZoned = toZonedTime(freshAppointment.datetime, TIMEZONE);
                 const startTime = format(appointmentZoned, 'HH:mm');
@@ -89,12 +94,19 @@ export async function POST(request: NextRequest) {
                         event: 'appointment_confirmed',
                         appointmentId: freshAppointment.id,
                         type: freshAppointment.type,
+                        isVirtual,
                         patientName: freshAppointment.patient?.name || 'Sin Nombre',
                         phone: freshAppointment.patient?.phoneNumber || '',
                         email: freshAppointment.patient?.email || '',
                         date: dateOnly,
                         startTime,
-                        endTime
+                        endTime,
+                        price,
+                        depositPaidAmount,
+                        remainingAmount,
+                        paymentAlias: (settings as any)?.paymentAlias || '',
+                        paymentCbu: (settings as any)?.paymentCbu || '',
+                        paymentHolder: (settings as any)?.paymentHolder || '',
                     })
                 }).catch(err => console.error('n8n Webhook Error (MP Webhook):', err));
              }

@@ -284,7 +284,11 @@ export async function bookAppointment(formData: FormData) {
       }
     }
 
-    const depositAmount = config.price * (config.depositPercentage / 100)
+    // Virtuales: se paga el total. Presenciales: solo seña.
+    const isVirtual = type === 'VIRTUAL'
+    const amountToPay = isVirtual
+      ? config.price
+      : config.price * (config.depositPercentage / 100)
     const bookingDate = new Date(date)
 
     const appointment = await prisma.$transaction(async (tx: any) => {
@@ -396,7 +400,8 @@ export async function bookAppointment(formData: FormData) {
       appointment,
       name,
       session.user.email,
-      depositAmount
+      amountToPay,
+      isVirtual
     )
 
     return {
@@ -426,15 +431,18 @@ export async function bookAppointment(formData: FormData) {
   }
 }
 
-async function createPreferenceForAppointment(appointment: any, payerName: string, payerEmail: string | null | undefined, amount: number) {
+async function createPreferenceForAppointment(appointment: any, payerName: string, payerEmail: string | null | undefined, amount: number, isVirtual: boolean = false) {
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || 'http://localhost:3000'
+  const itemTitle = isVirtual
+    ? `Sesión Virtual de Kinesiología (pago total)`
+    : `Seña: Sesión de Kinesiología`
   const preferenceBody = {
-    items: [{ id: 'deposit', title: `Seña: Sesión de Kinesiología`, quantity: 1, unit_price: amount, currency_id: 'ARS' }],
+    items: [{ id: isVirtual ? 'full' : 'deposit', title: itemTitle, quantity: 1, unit_price: amount, currency_id: 'ARS' }],
     payer: { email: payerEmail || 'unknown@email.com', name: payerName },
     external_reference: appointment.id,
     back_urls: { success: `${appUrl}/booking/success`, failure: `${appUrl}/booking/failure`, pending: `${appUrl}/booking/pending` },
     notification_url: `${appUrl}/api/webhooks/mercadopago`,
-    metadata: { appointment_id: appointment.id },
+    metadata: { appointment_id: appointment.id, is_virtual: isVirtual },
     expires: true,
   }
   const preferenceResponse = await preference.create({ body: preferenceBody })
@@ -453,9 +461,12 @@ export async function getAppointmentPaymentUrl(appointmentId: string) {
   const expirationThreshold = subMinutes(now, RESERVATION_TIMEOUT_MINUTES)
   if (appointment.createdAt < expirationThreshold) return { success: false, error: 'Appointment expired' }
   const config = await getSystemConfig()
-  const depositAmount = config.price * (config.depositPercentage / 100)
+  const isVirtual = appointment.type === 'VIRTUAL'
+  const amountToPay = isVirtual
+    ? config.price
+    : config.price * (config.depositPercentage / 100)
   try {
-    const url = await createPreferenceForAppointment(appointment, appointment.patient?.name || 'Paciente', appointment.patient?.email, depositAmount)
+    const url = await createPreferenceForAppointment(appointment, appointment.patient?.name || 'Paciente', appointment.patient?.email, amountToPay, isVirtual)
     return { success: true, url }
   } catch (e) {
     return { success: false, error: 'Failed to generate payment link' }

@@ -12,6 +12,10 @@ type Settings = {
     currentPrice: number
     sessionDuration: number
     depositPercentage: number
+    paymentAlias?: string | null
+    paymentCbu?: string | null
+    paymentHolder?: string | null
+    vacationMessage?: string | null
 }
 
 type Schedule = {
@@ -65,7 +69,11 @@ export function SettingsManager({
         await updateGlobalSettings({
             currentPrice: Number(settings.currentPrice),
             sessionDuration: Number(settings.sessionDuration),
-            depositPercentage: Number(settings.depositPercentage)
+            depositPercentage: Number(settings.depositPercentage),
+            paymentAlias: settings.paymentAlias || null,
+            paymentCbu: settings.paymentCbu || null,
+            paymentHolder: settings.paymentHolder || null,
+            vacationMessage: settings.vacationMessage || null,
         })
         setIsSavingSettings(false)
         router.refresh()
@@ -270,7 +278,7 @@ export function SettingsManager({
                     </div>
                     <div>
                         <label className="block text-sm font-medium mb-1">Duración Sesión (minutos)</label>
-                        <input 
+                        <input
                             type="number"
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700"
                             value={settings.sessionDuration}
@@ -278,6 +286,38 @@ export function SettingsManager({
                         />
                     </div>
                 </div>
+
+                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-neutral-700">
+                    <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-3">Datos de Transferencia (saldo al finalizar sesión)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Alias</label>
+                            <input type="text" placeholder="federico.colella.mp"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm dark:bg-neutral-900 dark:border-neutral-700"
+                                value={settings.paymentAlias || ''}
+                                onChange={(e) => setSettings({...settings, paymentAlias: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">CBU/CVU</label>
+                            <input type="text" placeholder="0000003100000000000000"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm dark:bg-neutral-900 dark:border-neutral-700"
+                                value={settings.paymentCbu || ''}
+                                onChange={(e) => setSettings({...settings, paymentCbu: e.target.value})}
+                            />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium mb-1">Titular (Nombre completo)</label>
+                            <input type="text" placeholder="Federico Colella"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm dark:bg-neutral-900 dark:border-neutral-700"
+                                value={settings.paymentHolder || ''}
+                                onChange={(e) => setSettings({...settings, paymentHolder: e.target.value})}
+                            />
+                        </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Estos datos se envían por WhatsApp en el mensaje de confirmación de turno presencial.</p>
+                </div>
+
                 <div className="mt-4 flex justify-end">
                     <Button onClick={saveSettings} disabled={isSavingSettings}>
                         {isSavingSettings ? 'Guardando...' : 'Guardar Cambios'}

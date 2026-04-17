@@ -13,6 +13,10 @@ export default async function SettingsPage() {
   const serializedSettings = {
       ...settings,
       currentPrice: Number(settings.currentPrice),
+      paymentAlias: (settings as any).paymentAlias ?? null,
+      paymentCbu: (settings as any).paymentCbu ?? null,
+      paymentHolder: (settings as any).paymentHolder ?? null,
+      vacationMessage: (settings as any).vacationMessage ?? null,
   }
 
   const serializedOverrides = overrides.map((ov: any) => ({
