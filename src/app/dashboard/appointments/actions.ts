@@ -101,14 +101,18 @@ export async function cancelAppointment(appointmentId: string) {
 
         // Intentar reembolso si hay pago registrado
         let refundMsg = ""
+        console.log(`[Cancel] Appointment ${appointmentId}: depositPaid=${appointment.depositPaid}, paymentId=${appointment.paymentId}`)
         if (appointment.depositPaid && appointment.paymentId) {
             const refund = await refundMercadoPagoPayment(appointment.paymentId)
             if (refund.success) {
-                refundMsg = " El reembolso se procesó correctamente en Mercado Pago."
+                refundMsg = " El reembolso se procesó correctamente en Mercado Pago (puede tardar hasta 10 días hábiles)."
+                console.log(`[Cancel] Refund OK for ${appointmentId}: refundId=${refund.refundId}, status=${refund.status}`)
             } else {
-                console.error(`Refund failed for appointment ${appointmentId}:`, refund.error)
+                console.error(`[Cancel] Refund FAILED for ${appointmentId}:`, refund.error)
                 refundMsg = " El turno se canceló pero hubo un error procesando el reembolso — nos comunicaremos con vos."
             }
+        } else if (appointment.depositPaid && !appointment.paymentId) {
+            console.warn(`[Cancel] ${appointmentId} marcado como depositPaid=true pero sin paymentId (probablemente turno manual, no hay refund que hacer)`)
         }
 
         await prisma.appointment.update({
