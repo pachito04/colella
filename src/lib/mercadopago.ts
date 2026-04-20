@@ -17,18 +17,33 @@ export const paymentRefund = new PaymentRefund(client);
 
 /**
  * Realiza un reembolso total del pago indicado.
- * Retorna { success, refundId?, error? }
+ * Retorna { success, refundId?, status?, error? }
  */
-export async function refundMercadoPagoPayment(paymentId: string): Promise<{ success: boolean; refundId?: string; error?: string }> {
-  if (!paymentId) return { success: false, error: 'Missing paymentId' };
+export async function refundMercadoPagoPayment(paymentId: string): Promise<{ success: boolean; refundId?: string; status?: string; error?: string }> {
+  if (!paymentId) {
+    console.error('[MP Refund] Missing paymentId');
+    return { success: false, error: 'Missing paymentId' };
+  }
+  console.log(`[MP Refund] Iniciando refund total para paymentId=${paymentId}`);
   try {
-    const result = await paymentRefund.create({ payment_id: paymentId });
-    if (result && (result as any).status === 'approved') {
-      return { success: true, refundId: String((result as any).id) };
+    // .total() hace refund completo. Pasa body:{} por defecto a la API de MP.
+    const result: any = await paymentRefund.total({ payment_id: paymentId });
+    console.log('[MP Refund] Response:', JSON.stringify(result)?.slice(0, 500));
+
+    // Un refund exitoso siempre retorna un id. El status puede ser 'approved' o 'in_process'.
+    if (result && result.id) {
+      return {
+        success: true,
+        refundId: String(result.id),
+        status: result.status || 'unknown'
+      };
     }
-    return { success: false, error: `Refund status: ${(result as any)?.status || 'unknown'}` };
+    return { success: false, error: `Refund sin id: ${JSON.stringify(result)?.slice(0, 200)}` };
   } catch (error: any) {
-    console.error('[MP Refund] Error:', error?.message || error);
-    return { success: false, error: error?.message || 'refund failed' };
+    // Errores tipicos: pago ya reembolsado, pago no encontrado, pago muy viejo
+    const msg = error?.message || error?.error || error?.cause || 'refund failed';
+    const apiMsg = error?.cause?.[0]?.description || error?.data?.message;
+    console.error('[MP Refund] Error:', msg, apiMsg || '');
+    return { success: false, error: apiMsg || msg };
   }
 }
