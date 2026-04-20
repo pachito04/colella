@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/auth'
+import { refundMercadoPagoPayment } from '@/lib/mercadopago'
 import { revalidatePath } from 'next/cache'
 
 async function requireAdmin() {
@@ -423,12 +424,26 @@ export async function addBlockoutDate(date: Date, reason?: string) {
     include: { patient: true }
   })
 
-  // Cancelar los turnos afectados
+  // Cancelar los turnos afectados + refund + notificacion
   if (affectedAppointments.length > 0) {
     await prisma.appointment.updateMany({
       where: { id: { in: affectedAppointments.map(a => a.id) } },
       data: { status: 'CANCELLED' }
     })
+
+    // Intentar reembolso de cada turno pago
+    for (const app of affectedAppointments) {
+      if (app.depositPaid && app.paymentId) {
+        try {
+          const refund = await refundMercadoPagoPayment(app.paymentId)
+          if (!refund.success) {
+            console.error(`[Blockout Refund] Falló para ${app.id}:`, refund.error)
+          } else {
+            console.log(`[Blockout Refund] OK ${app.id}: ${refund.refundId}`)
+          }
+        } catch (e) { console.error('[Blockout Refund] Error:', e) }
+      }
+    }
 
     // Notificar a cada paciente via n8n (webhook "day-blocked-notify")
     const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/day-blocked-notify'
@@ -444,7 +459,8 @@ export async function addBlockoutDate(date: Date, reason?: string) {
             phone: app.patient.phoneNumber,
             email: app.patient.email || '',
             originalDatetime: app.datetime.toISOString(),
-            reason: reason || 'Dia bloqueado',
+            reason: reason || 'motivos de fuerza mayor',
+            wasRefunded: app.depositPaid && !!app.paymentId,
           })
         }).catch(err => console.error('n8n day blocked notify error:', err))
       }
