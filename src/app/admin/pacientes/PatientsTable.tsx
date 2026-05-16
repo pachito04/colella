@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Search, X, User, Phone, Mail, Calendar, FileText, ChevronRight } from 'lucide-react'
+import { Search, X, User, Phone, Mail, Calendar, FileText, ChevronRight, Trash2, AlertTriangle } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
+import { deletePatient } from '../actions'
 
 type Appointment = {
   id: string
@@ -33,7 +35,25 @@ type Patient = {
 export function PatientsTable({ patients }: { patients: Patient[] }) {
   const [selected, setSelected] = useState<Patient | null>(null)
   const [search, setSearch] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const router = useRouter()
+
+  const handleDeletePatient = async () => {
+    if (!selected) return
+    setDeleting(true)
+    try {
+      await deletePatient(selected.id)
+      toast.success(`${selected.name || 'Paciente'} eliminado correctamente`)
+      setSelected(null)
+      setConfirmDelete(false)
+      router.refresh()
+    } catch (err: any) {
+      toast.error(err.message || 'Error al eliminar paciente')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -118,7 +138,7 @@ export function PatientsTable({ patients }: { patients: Patient[] }) {
       {/* Modal de historial */}
       {selected && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-neutral-900 rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
+          <div className="relative bg-white dark:bg-neutral-900 rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-neutral-800">
               <div className="flex items-center gap-4">
@@ -135,10 +155,56 @@ export function PatientsTable({ patients }: { patients: Patient[] }) {
                   </div>
                 </div>
               </div>
-              <button onClick={() => setSelected(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  title="Eliminar paciente"
+                  className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 hover:text-red-700 rounded-xl transition-colors"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
+                <button onClick={() => { setSelected(null); setConfirmDelete(false) }} className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
+
+            {/* Confirmación de borrado */}
+            {confirmDelete && (
+              <div className="absolute inset-0 z-10 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+                <div className="bg-white dark:bg-neutral-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-red-200 dark:border-red-900/40">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                      <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Eliminar paciente</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                    Vas a eliminar a <span className="font-bold">{selected.name || 'este paciente'}</span> ({selected.email}).
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-5">
+                    Se borrará el paciente, su historial de turnos, archivos médicos y turnos fijos. Esta acción es <span className="font-bold">irreversible</span>.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleDeletePatient}
+                      disabled={deleting}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {deleting && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                      {deleting ? 'Eliminando...' : 'Sí, eliminar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Stats rápidas */}
             <div className="grid grid-cols-3 gap-3 p-6 border-b border-gray-100 dark:border-neutral-800">

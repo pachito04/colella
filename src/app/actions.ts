@@ -227,6 +227,7 @@ export async function bookAppointment(formData: FormData) {
   const phone = (formData.get('phone') as string).replace(/[\s()-]/g, '')
   const date = formData.get('date') as string
   const type = (formData.get('type') as string) || 'PRESENTIAL'
+  const isDouble = formData.get('isDouble') === 'true'
   const patientNotes = formData.get('patientNotes') as string | null
   const medicalFile = formData.get('medicalFile') as File | null
 
@@ -236,6 +237,12 @@ export async function bookAppointment(formData: FormData) {
 
   const userId = session.user.id
   const config = await getSystemConfig()
+
+  // Para sesión doble, calculamos el segundo slot consecutivo
+  const slotsToBook: Date[] = [new Date(date)]
+  if (isDouble) {
+    slotsToBook.push(addMinutes(slotsToBook[0], config.duration))
+  }
 
   try {
     let medicalReportUrl: string | null = null
@@ -286,37 +293,40 @@ export async function bookAppointment(formData: FormData) {
 
     // Virtuales: se paga el total. Presenciales: solo seña.
     const isVirtual = type === 'VIRTUAL'
+    const sessionsCount = slotsToBook.length
     const amountToPay = isVirtual
-      ? config.price
-      : config.price * (config.depositPercentage / 100)
-    const bookingDate = new Date(date)
+      ? config.price * sessionsCount
+      : config.price * (config.depositPercentage / 100) * sessionsCount
 
-    const appointment = await prisma.$transaction(async (tx: any) => {
-      const existing = await tx.appointment.findFirst({
-        where: {
-          datetime: bookingDate,
-          status: { in: ['CONFIRMED', 'PENDING'] }
-        }
-      })
+    const appointments = await prisma.$transaction(async (tx: any) => {
+      // Validar que ningún slot esté tomado
+      for (const slot of slotsToBook) {
+        const existing = await tx.appointment.findFirst({
+          where: {
+            datetime: slot,
+            status: { in: ['CONFIRMED', 'PENDING'] }
+          }
+        })
 
-      if (existing) {
-        const isPending = existing.status === 'PENDING'
-        const now = new Date()
-        const expirationThreshold = subMinutes(now, RESERVATION_TIMEOUT_MINUTES)
-        const isExpired = existing.createdAt < expirationThreshold
+        if (existing) {
+          const isPending = existing.status === 'PENDING'
+          const now = new Date()
+          const expirationThreshold = subMinutes(now, RESERVATION_TIMEOUT_MINUTES)
+          const isExpired = existing.createdAt < expirationThreshold
 
-        if (isPending && isExpired) {
-          await tx.appointment.update({
-            where: { id: existing.id },
-            data: { status: 'CANCELLED' }
-          })
-        } else {
-          throw new Error('SLOT_TAKEN')
+          if (isPending && isExpired) {
+            await tx.appointment.update({
+              where: { id: existing.id },
+              data: { status: 'CANCELLED' }
+            })
+          } else {
+            throw new Error('SLOT_TAKEN')
+          }
         }
       }
 
-      const bookingDateZoned = toZonedTime(bookingDate, TIMEZONE)
-
+      // Bloqueo del día (chequear con el primer slot, todos son el mismo día)
+      const bookingDateZoned = toZonedTime(slotsToBook[0], TIMEZONE)
       const year = bookingDateZoned.getFullYear()
       const month = String(bookingDateZoned.getMonth() + 1).padStart(2, '0')
       const day = String(bookingDateZoned.getDate()).padStart(2, '0')
@@ -358,46 +368,54 @@ export async function bookAppointment(formData: FormData) {
         throw error
       }
 
-      return await tx.appointment.create({
-        data: {
-          datetime: bookingDate,
-          status: 'PENDING',
-          type: type as any,
-          patientId: userId,
-          depositPaid: false,
-          patientNotes: patientNotes || null,
-          medicalReportUrl: null
-        },
-        include: {
-          patient: true
-        }
-      })
+      // Crear todos los appointments (1 o 2)
+      const created = []
+      for (let i = 0; i < slotsToBook.length; i++) {
+        const slot = slotsToBook[i]
+        const app = await tx.appointment.create({
+          data: {
+            datetime: slot,
+            status: 'PENDING',
+            type: type as any,
+            patientId: userId,
+            depositPaid: false,
+            // Sólo el primer turno guarda las notas/archivo (los demás son la "continuación" del primero)
+            patientNotes: i === 0 ? (patientNotes || null) : null,
+            medicalReportUrl: null,
+          },
+          include: { patient: true }
+        })
+        created.push(app)
+      }
+      return created
     })
 
+    const firstAppointment = appointments[0]
+
     if (medicalFileData) {
-      const url = `/api/medical-files/${appointment.id}`
+      const url = `/api/medical-files/${firstAppointment.id}`
 
       const fileDataForPrisma = {
         ...medicalFileData,
         data: medicalFileData.data as unknown as Uint8Array<ArrayBuffer>
       }
       await prisma.appointmentFile.upsert({
-        where: { appointmentId: appointment.id },
+        where: { appointmentId: firstAppointment.id },
         update: { ...fileDataForPrisma },
         create: {
-          appointmentId: appointment.id,
+          appointmentId: firstAppointment.id,
           ...fileDataForPrisma
         }
       })
 
       await prisma.appointment.update({
-        where: { id: appointment.id },
+        where: { id: firstAppointment.id },
         data: { medicalReportUrl: url }
       })
     }
 
     const paymentUrl = await createPreferenceForAppointment(
-      appointment,
+      appointments,
       name,
       session.user.email,
       amountToPay,
@@ -431,18 +449,22 @@ export async function bookAppointment(formData: FormData) {
   }
 }
 
-async function createPreferenceForAppointment(appointment: any, payerName: string, payerEmail: string | null | undefined, amount: number, isVirtual: boolean = false) {
+async function createPreferenceForAppointment(appointments: any | any[], payerName: string, payerEmail: string | null | undefined, amount: number, isVirtual: boolean = false) {
+  const appointmentsList = Array.isArray(appointments) ? appointments : [appointments]
+  const isDouble = appointmentsList.length > 1
   const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || 'http://localhost:3000'
   const itemTitle = isVirtual
-    ? `Sesión Virtual de Kinesiología (pago total)`
-    : `Seña: Sesión de Kinesiología`
+    ? (isDouble ? `Sesión Virtual de Kinesiología (doble, pago total)` : `Sesión Virtual de Kinesiología (pago total)`)
+    : (isDouble ? `Seña: Sesión Doble de Kinesiología (60 min)` : `Seña: Sesión de Kinesiología`)
+  // Usamos pipe-separated IDs en external_reference para sesiones dobles
+  const externalReference = appointmentsList.map(a => a.id).join('|')
   const preferenceBody = {
     items: [{ id: isVirtual ? 'full' : 'deposit', title: itemTitle, quantity: 1, unit_price: amount, currency_id: 'ARS' }],
     payer: { email: payerEmail || 'unknown@email.com', name: payerName },
-    external_reference: appointment.id,
+    external_reference: externalReference,
     back_urls: { success: `${appUrl}/booking/success`, failure: `${appUrl}/booking/failure`, pending: `${appUrl}/booking/pending` },
     notification_url: `${appUrl}/api/webhooks/mercadopago`,
-    metadata: { appointment_id: appointment.id, is_virtual: isVirtual },
+    metadata: { appointment_id: appointmentsList[0].id, appointment_ids: externalReference, is_virtual: isVirtual, is_double: isDouble },
     expires: true,
   }
   const preferenceResponse = await preference.create({ body: preferenceBody })

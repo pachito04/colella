@@ -2,12 +2,12 @@
 
 import { toast } from "sonner"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DayPicker } from 'react-day-picker'
 import { format, startOfToday, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Calendar as CalendarIcon, Clock, User, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, MapPin, Video } from 'lucide-react'
+import { Loader2, Calendar as CalendarIcon, Clock, User, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, MapPin, Video, Copy, Check } from 'lucide-react'
 import { useSession, signIn } from "next-auth/react"
 import { useSearchParams } from "next/navigation"
 
@@ -37,7 +37,7 @@ export function BookingWidget() {
   const { data: session, status } = useSession()
   const searchParams = useSearchParams()
   
-  const { selectedDate, selectedSlot, step, setDate, setSlot, setStep } = useBookingStore()
+  const { selectedDate, selectedSlot, isDoubleSession, step, setDate, setSlot, setDoubleSession, setStep } = useBookingStore()
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [slots, setSlots] = useState<string[]>([])
   const [bookingStatus, setBookingStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
@@ -61,7 +61,27 @@ export function BookingWidget() {
   
   // Dynamic Config State
   const [errors, setErrors] = useState<{ name?: string, phone?: string }>({})
-  const [config, setConfig] = useState<{ price: number, duration: number, depositPercentage: number } | null>(null)
+  const [config, setConfig] = useState<{
+    price: number,
+    duration: number,
+    depositPercentage: number,
+    paymentAlias: string | null,
+    paymentCbu: string | null,
+    paymentHolder: string | null,
+  } | null>(null)
+  const [aliasCopied, setAliasCopied] = useState(false)
+
+  const copyAlias = async () => {
+    if (!config?.paymentAlias) return
+    try {
+      await navigator.clipboard.writeText(config.paymentAlias)
+      setAliasCopied(true)
+      toast.success('Alias copiado')
+      setTimeout(() => setAliasCopied(false), 2000)
+    } catch {
+      toast.error('No se pudo copiar')
+    }
+  }
 
   useEffect(() => {
       setIsMounted(true)
@@ -72,22 +92,24 @@ export function BookingWidget() {
   useEffect(() => {
     const dateParam = searchParams.get('date')
     const slotParam = searchParams.get('slot')
-    
+    const doubleParam = searchParams.get('double')
+
     if (dateParam && slotParam && status === 'authenticated') {
         const date = parseISO(dateParam)
-        
+
         // Only update if different to avoid loops (though dependency fix helps more)
         if (!selectedDate || selectedDate.getTime() !== date.getTime()) {
+            if (doubleParam === '1') setDoubleSession(true)
             setDate(date)
             setSlot(slotParam)
             setStep('details')
-            
+
             // Clear URL params to prevent "locking" the date selection
             // Using window.history.replaceState to avoid a full router refresh/flicker
             window.history.replaceState({}, '', window.location.pathname)
         }
     }
-  }, [searchParams, status, setDate, setSlot, setStep, selectedDate]) // Added selectedDate to dep array to satisfy linter but added logic check inside
+  }, [searchParams, status, setDate, setSlot, setStep, setDoubleSession, selectedDate]) // Added selectedDate to dep array to satisfy linter but added logic check inside
 
   useEffect(() => {
     if (session?.user?.phoneNumber && !phoneNumber) {
@@ -107,28 +129,63 @@ export function BookingWidget() {
     }
   }, [selectedDate])
 
-  // Fix: mantener la vista en la sección de pago al confirmar (no scrollear a reviews)
+  const rightColumnRef = useRef<HTMLDivElement | null>(null)
+  const prevStepRef = useRef(step)
+
+  // Mantener al usuario enfocado en cada paso del flujo (clave en mobile, donde la columna derecha queda debajo del calendario)
   useEffect(() => {
-    if (step === 'confirmation') {
-      setTimeout(() => {
-        document.getElementById('booking')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 150)
-    }
+    const prev = prevStepRef.current
+    prevStepRef.current = step
+    // No hacer scroll en el primer render
+    if (prev === step) return
+
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+    const targetId = step === 'confirmation' ? 'booking' : null
+
+    setTimeout(() => {
+      // En desktop, sólo confirmamos: vista completa de la sección de pago
+      if (!isMobile) {
+        if (targetId) {
+          document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+        return
+      }
+      // En mobile, llevamos al usuario al panel dinámico (columna derecha)
+      if (rightColumnRef.current) {
+        const rect = rightColumnRef.current.getBoundingClientRect()
+        const offset = window.scrollY + rect.top - 16
+        window.scrollTo({ top: offset, behavior: 'smooth' })
+      }
+    }, 120)
   }, [step])
 
+  // Para sesión doble: verifica si el siguiente slot consecutivo (slot + duration) también está disponible
+  const canDoubleSlot = (slot: string) => {
+    if (!config) return false
+    const slotMs = new Date(slot).getTime()
+    const nextSlotMs = slotMs + config.duration * 60 * 1000
+    return slots.some(s => new Date(s).getTime() === nextSlotMs)
+  }
+
   const handleSlotClick = (slot: string) => {
+    if (isDoubleSession && !canDoubleSlot(slot)) {
+      toast.error('Este horario no permite sesión doble (el siguiente turno no está disponible)')
+      return
+    }
+
     if (status === 'unauthenticated') {
         // Trigger generic sign in, preserving state
         const params = new URLSearchParams()
         if (selectedDate) params.set('date', selectedDate.toISOString())
         params.set('slot', slot)
-        
-        signIn('google', { 
-            callbackUrl: `${window.location.pathname}?${params.toString()}` 
+        if (isDoubleSession) params.set('double', '1')
+
+        signIn('google', {
+            callbackUrl: `${window.location.pathname}?${params.toString()}`
         })
         return
     }
-    
+
     setSlot(slot)
     setStep('details')
   }
@@ -172,6 +229,7 @@ export function BookingWidget() {
     formData.set('phone', phoneNumber as string)
     formData.set('date', selectedSlot)
     formData.set('type', appointmentType)
+    formData.set('isDouble', isDoubleSession ? 'true' : 'false')
 
     try {
       const res = await bookAppointment(formData)
@@ -261,7 +319,7 @@ export function BookingWidget() {
           </div>
 
           {/* Right Column: Dynamic Content */}
-          <div className="w-full md:w-1/2 p-4 md:p-12 flex flex-col bg-white/5">
+          <div ref={rightColumnRef} className="w-full md:w-1/2 p-4 md:p-12 flex flex-col bg-white/5 scroll-mt-4">
              <AnimatePresence mode="wait">
                 {step === 'date' && (
                    <motion.div 
@@ -345,28 +403,76 @@ export function BookingWidget() {
                                         Los horarios se muestran en tu hora local. En el consultorio son hora Argentina (ARG).
                                     </div>
                                 )}
+
+                                {/* Toggle Sesión Doble */}
+                                <button
+                                    type="button"
+                                    onClick={() => setDoubleSession(!isDoubleSession)}
+                                    className={cn(
+                                      "flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all text-left",
+                                      isDoubleSession
+                                        ? "border-teal-500 bg-teal-500/10"
+                                        : "border-neutral-800 bg-black/20 hover:border-neutral-700"
+                                    )}
+                                >
+                                    <div className="flex-1">
+                                        <span className={cn(
+                                          "block text-xs font-black uppercase tracking-wider",
+                                          isDoubleSession ? "text-teal-300" : "text-neutral-300"
+                                        )}>
+                                            Sesión doble (60 min)
+                                        </span>
+                                        <span className="block text-[10px] text-neutral-500 mt-0.5">
+                                            {isDoubleSession
+                                              ? `Reservás 2 turnos consecutivos · Total ${ '$' + (config.price * 2).toLocaleString('es-AR')}`
+                                              : 'Activá si querés una sesión extendida de 60 minutos'}
+                                        </span>
+                                    </div>
+                                    <div className={cn(
+                                      "relative w-10 h-6 rounded-full transition-colors shrink-0",
+                                      isDoubleSession ? "bg-teal-500" : "bg-neutral-700"
+                                    )}>
+                                        <span className={cn(
+                                          "absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform",
+                                          isDoubleSession ? "translate-x-[18px]" : "translate-x-0.5"
+                                        )} />
+                                    </div>
+                                </button>
+
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pr-2 max-h-[340px]">
                                     {slots.map((slot, index) => {
                                       const d = new Date(slot)
                                       const localTime = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })
                                       const argTime = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires' })
+                                      const endLocal = new Date(d.getTime() + config.duration * 2 * 60 * 1000)
+                                          .toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })
+                                      const slotDoubleable = canDoubleSlot(slot)
+                                      const isDisabled = isDoubleSession && !slotDoubleable
                                       return (
                                         <button
                                             key={`${slot}-${index}`}
-                                            onClick={() => handleSlotClick(slot)}
+                                            onClick={() => !isDisabled && handleSlotClick(slot)}
+                                            disabled={isDisabled}
                                             className={cn(
                                               "group relative p-5 rounded-2xl border transition-all duration-300 text-center",
-                                              "border-neutral-800 bg-neutral-900 shadow-sm hover:shadow-md",
-                                              "hover:border-teal-500 hover:bg-teal-900/20"
+                                              isDisabled
+                                                ? "border-neutral-800 bg-neutral-900/40 opacity-40 cursor-not-allowed"
+                                                : "border-neutral-800 bg-neutral-900 shadow-sm hover:shadow-md hover:border-teal-500 hover:bg-teal-900/20"
                                             )}
+                                            title={isDisabled ? 'El siguiente turno no está libre' : undefined}
                                         >
-                                            <span className="text-lg font-bold text-gray-200 group-hover:text-teal-400">
-                                              {localTime}
+                                            <span className={cn(
+                                              "text-lg font-bold transition-colors",
+                                              isDisabled ? "text-neutral-600" : "text-gray-200 group-hover:text-teal-400"
+                                            )}>
+                                              {isDoubleSession ? `${localTime} - ${endLocal}` : localTime}
                                             </span>
                                             {isDifferentTz && (
                                               <span className="block text-[10px] text-neutral-500 mt-0.5">{argTime} ARG</span>
                                             )}
-                                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            {!isDisabled && (
+                                              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            )}
                                         </button>
                                       )
                                     })}
@@ -374,10 +480,12 @@ export function BookingWidget() {
                                 <div className="mt-auto pt-4 p-4 rounded-[1.5rem] bg-teal-500/5 border border-teal-500/10 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-                                        <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">Sesión de {config.duration} min</span>
+                                        <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">
+                                          Sesión de {isDoubleSession ? config.duration * 2 : config.duration} min
+                                        </span>
                                     </div>
                                     <span className="text-sm font-black text-gray-100">
-                                        ${config.price.toLocaleString('es-AR')}
+                                        ${(config.price * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                     </span>
                                 </div>
                             </div>
@@ -406,13 +514,25 @@ export function BookingWidget() {
                                    </span>
                                    <span>•</span>
                                    <span className="flex items-center gap-1">
-                                      {selectedSlot && new Date(selectedSlot).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })} HS
+                                      {selectedSlot && new Date(selectedSlot).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })}
+                                      {isDoubleSession && selectedSlot && (
+                                        <>
+                                          {' - '}
+                                          {new Date(new Date(selectedSlot).getTime() + config.duration * 2 * 60 * 1000).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: userTimezone })}
+                                        </>
+                                      )} HS
                                       {isDifferentTz && selectedSlot && (
                                         <span className="text-neutral-600 ml-1 normal-case font-medium">
                                           ({new Date(selectedSlot).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires' })} ARG)
                                         </span>
                                       )}
                                    </span>
+                                   {isDoubleSession && (
+                                     <>
+                                       <span>•</span>
+                                       <span className="text-teal-400">Sesión doble · 60 min</span>
+                                     </>
+                                   )}
                                 </div>
                               </div>
                             </div>
@@ -517,8 +637,10 @@ export function BookingWidget() {
                              
                                  <div className="bg-black/20 p-5 rounded-2xl border border-neutral-800 space-y-3">
                                      <div className="flex justify-between items-center">
-                                         <span className="text-sm text-neutral-400 font-medium">Valor de la sesión</span>
-                                         <span className="text-lg font-bold text-white">${config.price.toLocaleString('es-AR')}</span>
+                                         <span className="text-sm text-neutral-400 font-medium">
+                                           {isDoubleSession ? `Sesión doble (2 x ${config.duration} min)` : 'Valor de la sesión'}
+                                         </span>
+                                         <span className="text-lg font-bold text-white">${(config.price * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}</span>
                                      </div>
                                      {appointmentType === 'VIRTUAL' ? (
                                        <div className="flex justify-between items-center">
@@ -527,7 +649,7 @@ export function BookingWidget() {
                                                <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Sesión virtual - pago anticipado</span>
                                            </div>
                                            <span className="text-lg font-bold text-teal-400">
-                                              ${config.price.toLocaleString('es-AR')}
+                                              ${(config.price * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                            </span>
                                        </div>
                                      ) : (
@@ -538,15 +660,36 @@ export function BookingWidget() {
                                                  <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Asegura tu lugar</span>
                                              </div>
                                              <span className="text-lg font-bold text-teal-400">
-                                                ${(config.price * (config.depositPercentage / 100)).toLocaleString('es-AR')}
+                                                ${(config.price * (config.depositPercentage / 100) * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                              </span>
                                          </div>
                                          <div className="pt-3 border-t border-neutral-800/50 flex justify-between items-center">
                                              <span className="text-xs font-medium text-neutral-500 italic">El saldo restante se abona el día de la sesión</span>
                                              <span className="text-xs font-bold text-neutral-500">
-                                                ${(config.price * (1 - config.depositPercentage / 100)).toLocaleString('es-AR')}
+                                                ${(config.price * (1 - config.depositPercentage / 100) * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                              </span>
                                          </div>
+                                         {config.paymentAlias && (
+                                           <div className="mt-3 pt-3 border-t border-neutral-800/50 space-y-2">
+                                              <p className="text-[10px] font-black uppercase tracking-widest text-teal-400">Para abonar el saldo restante</p>
+                                              <button
+                                                type="button"
+                                                onClick={copyAlias}
+                                                className="w-full flex items-center justify-between gap-2 p-3 rounded-xl bg-teal-500/10 border border-teal-500/30 hover:bg-teal-500/15 transition-colors"
+                                              >
+                                                <div className="text-left">
+                                                  <span className="block text-[9px] font-bold uppercase tracking-wider text-teal-400/70">Alias MercadoPago</span>
+                                                  <span className="block text-sm font-bold text-teal-300 select-all">{config.paymentAlias}</span>
+                                                  {config.paymentHolder && (
+                                                    <span className="block text-[10px] text-neutral-500 mt-0.5">A nombre de {config.paymentHolder}</span>
+                                                  )}
+                                                </div>
+                                                {aliasCopied
+                                                  ? <Check className="w-4 h-4 text-green-400 shrink-0" />
+                                                  : <Copy className="w-4 h-4 text-teal-400 shrink-0" />}
+                                              </button>
+                                           </div>
+                                         )}
                                        </>
                                      )}
                                  </div>
@@ -683,17 +826,26 @@ export function BookingWidget() {
                             )}
                           </div>
                           <p className="text-neutral-400 max-w-sm mx-auto leading-relaxed">
-                            Hemos reservado tu lugar temporalmente. Completá el pago de la seña para confirmar definitivamente tu turno.
+                            Hemos reservado {isDoubleSession ? 'tus 2 turnos consecutivos' : 'tu lugar'} temporalmente. Completá el pago de {appointmentType === 'VIRTUAL' ? 'la sesión' : 'la seña'} para confirmar definitivamente {isDoubleSession ? 'tus turnos' : 'tu turno'}.
                           </p>
+                          {appointmentType !== 'VIRTUAL' && config.paymentAlias && (
+                            <div className="mt-4 mx-auto max-w-sm p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Para el 50% restante</p>
+                              <p className="text-sm font-bold text-amber-300 select-all">{config.paymentAlias}</p>
+                              {config.paymentHolder && (
+                                <p className="text-[10px] text-neutral-500 mt-0.5">A nombre de {config.paymentHolder}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        
+
                         <div className="w-full space-y-4">
                           {paymentUrl && !isExpired && (
                               <Button size="lg" className="h-16 w-full text-lg font-bold rounded-2xl shadow-2xl shadow-green-500/20 bg-green-600 hover:bg-green-700 active:scale-95 transition-transform text-white" onClick={() => window.open(paymentUrl, '_blank')}>
                                   {appointmentType === 'VIRTUAL' ? 'Pagar con Mercado Pago' : 'Pagar Seña con Mercado Pago'}
                               </Button>
                           )}
-                          
+
                           {isExpired && (
                               <div className="p-4 bg-red-900/10 border border-red-900/30 rounded-2xl text-red-400 font-medium text-sm">
                                   El tiempo de reserva ha expirado. Por favor, selecciona un horario nuevamente.
@@ -702,6 +854,7 @@ export function BookingWidget() {
                            <Button variant="ghost" className="w-full text-neutral-400 hover:text-white font-bold hover:bg-neutral-800" onClick={() => {
                                setDate(undefined);
                                setSlot(null);
+                               setDoubleSession(false);
                                setStep('date');
                            }}>
                                Empezar de nuevo

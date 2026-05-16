@@ -23,21 +23,23 @@ export async function POST(request: NextRequest) {
       
       if (paymentData.status === 'approved') {
         const externalReference = paymentData.external_reference;
-        
+
         if (externalReference) {
-          // Verify it exists first
-          const appointment = await prisma.appointment.findUnique({
-            where: { id: externalReference },
+          // Soportamos external_reference con múltiples IDs separados por "|" (sesión doble)
+          const appointmentIds = externalReference.split('|').filter(Boolean);
+          const isDouble = appointmentIds.length > 1;
+
+          // Validar existencia primero
+          const existing = await prisma.appointment.findMany({
+            where: { id: { in: appointmentIds } },
             include: { patient: true }
           });
 
-          if (appointment) {
-             // 1. INTENTO DE ACTUALIZACIÓN ATÓMICA
-             // Solo actualizamos si el estado es 'PENDING'.
-             // updateMany devuelve { count: N }
+          if (existing.length > 0) {
+             // Actualización atómica: sólo PENDING
              const updateResult = await prisma.appointment.updateMany({
                 where: {
-                    id: externalReference,
+                    id: { in: appointmentIds },
                     status: 'PENDING'
                 },
                 data: {
@@ -48,25 +50,23 @@ export async function POST(request: NextRequest) {
              });
 
              if (updateResult.count === 0) {
-                 // Si count es 0, significa que:
-                 // a) El turno no existe (ya chequeado arriba, poco probable)
-                 // b) El turno YA NO ESTABA EN PENDING (O sea, ya fue procesado por otro request concurrente)
                  console.log(`Job ${externalReference} was already processed (Not Pending). Skipping notification.`);
                  return NextResponse.json({ status: 'ok', message: 'Already processed' });
              }
 
-             // SI LLEGAMOS AQUI, SOMOS EL PROCESO QUE CONFIRMÓ EL TURNO.
-             // Solo nosotros disparamos n8n y emails.
-             console.log(`Atomic Update Success: Appointment ${externalReference} confirmed. PaymentId: ${dataId}`);
-             
-             // Recargar datos actualizados (necesitamos patient include)
-             const freshAppointment = await prisma.appointment.findUnique({
-                 where: { id: externalReference },
-                 include: { patient: true }
+             console.log(`Atomic Update Success: ${updateResult.count} appointment(s) confirmed for ref ${externalReference}. PaymentId: ${dataId}`);
+
+             // Recargar datos actualizados (necesitamos patient include) - usamos el primer turno como representante
+             const freshAppointments = await prisma.appointment.findMany({
+                 where: { id: { in: appointmentIds } },
+                 include: { patient: true },
+                 orderBy: { datetime: 'asc' }
              });
 
-             if (!freshAppointment) { 
-                 console.error('CRITICAL: Updated appointment disappears?'); 
+             const freshAppointment = freshAppointments[0];
+
+             if (!freshAppointment) {
+                 console.error('CRITICAL: Updated appointment disappears?');
                  return NextResponse.json({ status: 'error' });
              }
 
@@ -78,13 +78,18 @@ export async function POST(request: NextRequest) {
                 const duration = settings?.sessionDuration || 30;
                 const price = Number(settings?.currentPrice || 40000);
                 const depositPct = settings?.depositPercentage || 50;
+                const sessionsCount = freshAppointments.length;
                 const isVirtual = freshAppointment.type === 'VIRTUAL';
-                const depositPaidAmount = isVirtual ? price : (price * depositPct / 100);
-                const remainingAmount = isVirtual ? 0 : (price - depositPaidAmount);
+                const totalPrice = price * sessionsCount;
+                const depositPaidAmount = isVirtual ? totalPrice : (price * depositPct / 100) * sessionsCount;
+                const remainingAmount = isVirtual ? 0 : (totalPrice - depositPaidAmount);
 
                 const appointmentZoned = toZonedTime(freshAppointment.datetime, TIMEZONE);
+                // Para sesión doble, el endTime usa el ÚLTIMO appointment + duration
+                const lastApp = freshAppointments[freshAppointments.length - 1];
+                const lastZoned = toZonedTime(lastApp.datetime, TIMEZONE);
                 const startTime = format(appointmentZoned, 'HH:mm');
-                const endTime = format(addMinutes(appointmentZoned, duration), 'HH:mm');
+                const endTime = format(addMinutes(lastZoned, duration), 'HH:mm');
                 const dateOnly = format(appointmentZoned, 'yyyy-MM-dd');
 
                 fetch(n8nWebhookUrl, {
@@ -93,6 +98,9 @@ export async function POST(request: NextRequest) {
                     body: JSON.stringify({
                         event: 'appointment_confirmed',
                         appointmentId: freshAppointment.id,
+                        appointmentIds: freshAppointments.map(a => a.id),
+                        sessionsCount,
+                        isDouble,
                         type: freshAppointment.type,
                         isVirtual,
                         patientName: freshAppointment.patient?.name || 'Sin Nombre',
@@ -102,6 +110,7 @@ export async function POST(request: NextRequest) {
                         startTime,
                         endTime,
                         price,
+                        totalPrice,
                         depositPaidAmount,
                         remainingAmount,
                         paymentAlias: (settings as any)?.paymentAlias || '',

@@ -9,12 +9,18 @@ export async function getPublicConfig() {
     return {
       price: 40000,
       duration: 30,
-      depositPercentage: 50
+      depositPercentage: 50,
+      paymentAlias: null as string | null,
+      paymentCbu: null as string | null,
+      paymentHolder: null as string | null,
     }
   }
   return {
     price: Number(settings.currentPrice),
     duration: settings.sessionDuration,
-    depositPercentage: settings.depositPercentage
+    depositPercentage: settings.depositPercentage,
+    paymentAlias: settings.paymentAlias,
+    paymentCbu: settings.paymentCbu,
+    paymentHolder: settings.paymentHolder,
   }
 }

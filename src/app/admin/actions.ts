@@ -573,6 +573,55 @@ export async function deleteRecurringSlot(id: string) {
   revalidatePath('/')
 }
 
+export async function deletePatient(patientId: string) {
+  await requireAdmin()
+
+  const patient = await prisma.user.findUnique({
+    where: { id: patientId },
+    include: {
+      appointments: { where: { status: 'CONFIRMED', datetime: { gte: new Date() } } },
+      recurringSlots: { where: { isActive: true } },
+    }
+  })
+
+  if (!patient) throw new Error('Paciente no encontrado')
+  if (patient.role === 'ADMIN') throw new Error('No se puede eliminar a un administrador')
+
+  if (patient.appointments.length > 0) {
+    throw new Error(`Este paciente tiene ${patient.appointments.length} turno(s) confirmado(s) a futuro. Cancelalos primero antes de eliminarlo.`)
+  }
+
+  // Desactivar y borrar de Calendar cualquier turno fijo activo
+  for (const slot of patient.recurringSlots) {
+    if (slot.calendarEventId) {
+      const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+      try {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete',
+            slotId: slot.id,
+            calendarEventId: slot.calendarEventId,
+          })
+        })
+      } catch (e) { console.error('n8n Calendar Delete on PatientDelete:', e) }
+    }
+  }
+
+  // Borrar todos los registros relacionados en transacción
+  await prisma.$transaction([
+    prisma.recurringSlotException.deleteMany({ where: { recurringSlot: { patientId } } }),
+    prisma.recurringSlot.deleteMany({ where: { patientId } }),
+    prisma.enrollment.deleteMany({ where: { userId: patientId } }),
+    prisma.appointment.deleteMany({ where: { patientId } }),
+    prisma.user.delete({ where: { id: patientId } }),
+  ])
+
+  revalidatePath('/admin/pacientes')
+  revalidatePath('/admin')
+}
+
 export async function searchPatients(query: string) {
   await requireAdmin()
   if (!query || query.length < 2) return []
@@ -600,13 +649,72 @@ export async function addRecurringSlotException(data: { recurringSlotId: string,
       reason: data.reason || null,
     }
   })
+
+  // Eliminar la ocurrencia de Google Calendar via n8n
+  const slot = await prisma.recurringSlot.findUnique({
+    where: { id: data.recurringSlotId },
+    include: { patient: { select: { name: true } } }
+  })
+  if (slot?.calendarEventId) {
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete-exception',
+          slotId: slot.id,
+          calendarEventId: slot.calendarEventId,
+          dayOfWeek: slot.dayOfWeek,
+          startTime: slot.startTime,
+          date: data.date.toISOString(),
+          patientName: slot.patient?.name || 'Paciente',
+          reason: data.reason || null,
+        })
+      })
+      console.log('[CalendarSync DeleteException]', res.status)
+    } catch (e) { console.error('n8n Calendar DeleteException Error:', e) }
+  }
+
   revalidatePath('/admin/turnos-fijos')
   revalidatePath('/')
 }
 
 export async function deleteRecurringSlotException(id: string) {
   await requireAdmin()
+
+  // Antes de borrar, traer los datos para re-sincronizar Calendar (re-crear la ocurrencia)
+  const exception = await prisma.recurringSlotException.findUnique({
+    where: { id },
+    include: {
+      recurringSlot: {
+        include: { patient: { select: { name: true } } }
+      }
+    }
+  })
+
   await prisma.recurringSlotException.delete({ where: { id } })
+
+  if (exception?.recurringSlot?.calendarEventId) {
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'restore-exception',
+          slotId: exception.recurringSlotId,
+          calendarEventId: exception.recurringSlot.calendarEventId,
+          dayOfWeek: exception.recurringSlot.dayOfWeek,
+          startTime: exception.recurringSlot.startTime,
+          date: exception.date.toISOString(),
+          patientName: exception.recurringSlot.patient?.name || 'Paciente',
+        })
+      })
+      console.log('[CalendarSync RestoreException]', res.status)
+    } catch (e) { console.error('n8n Calendar RestoreException Error:', e) }
+  }
+
   revalidatePath('/admin/turnos-fijos')
   revalidatePath('/')
 }
