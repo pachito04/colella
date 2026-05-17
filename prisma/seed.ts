@@ -35,10 +35,11 @@ async function main() {
 
   for (const s of schedules) {
       await prisma.workSchedule.upsert({
-          where: { dayOfWeek: s.day },
+          where: { dayOfWeek_type: { dayOfWeek: s.day, type: 'PRESENTIAL' } },
           update: {},
           create: {
               dayOfWeek: s.day,
+              type: 'PRESENTIAL',
               startTime: s.start,
               endTime: s.end,
               isActive: s.active

@@ -9,7 +9,7 @@
         {
           "match": {
             "type": "payload-hmac-sha256",
-            "secret": "REEMPLAZAR_CON_TU_SECRET",
+            "secret": "8c61a34f4daad548dba13114a4f3542fac0ce3ce6a65660a55fc1ed43fe0b000",
             "parameter": {
               "source": "header",
               "name": "X-Hub-Signature-256"

@@ -24,12 +24,24 @@ import { auth } from '@/auth'
 
 const RESERVATION_TIMEOUT_MINUTES = 15
 
+type DayWindow = { startTime: string; endTime: string }
+type DaySchedule = {
+  startTime: string
+  endTime: string
+  byType: Partial<Record<'PRESENTIAL' | 'VIRTUAL', DayWindow>>
+}
+
 async function getSystemConfig(targetDate?: Date) {
-  let config = {
+  const config: {
+    price: number
+    duration: number
+    depositPercentage: number
+    schedule: Record<number, DaySchedule>
+  } = {
     price: 40000,
     duration: 30,
     depositPercentage: 50,
-    schedule: {} as Record<number, { startTime: string; endTime: string }>
+    schedule: {}
   }
 
   const settings = await prisma.globalSettings.findUnique({
@@ -60,10 +72,14 @@ async function getSystemConfig(targetDate?: Date) {
 
   if (override) {
     const dayOfWeek = getDay(targetDate!)
-
+    // Override impacta ambos tipos (es un override "puntual" del día completo)
     config.schedule[dayOfWeek] = {
       startTime: override.startTime,
-      endTime: override.endTime
+      endTime: override.endTime,
+      byType: {
+        PRESENTIAL: { startTime: override.startTime, endTime: override.endTime },
+        VIRTUAL:    { startTime: override.startTime, endTime: override.endTime },
+      }
     }
   } else {
     const dbSchedule = await prisma.workSchedule.findMany({
@@ -71,9 +87,19 @@ async function getSystemConfig(targetDate?: Date) {
     })
 
     dbSchedule.forEach((s: any) => {
-      config.schedule[s.dayOfWeek] = {
-        startTime: s.startTime,
-        endTime: s.endTime
+      if (!config.schedule[s.dayOfWeek]) {
+        config.schedule[s.dayOfWeek] = {
+          startTime: s.startTime,
+          endTime: s.endTime,
+          byType: {},
+        } as DaySchedule
+      }
+      const day = config.schedule[s.dayOfWeek]
+      const type = (s.type ?? 'PRESENTIAL') as 'PRESENTIAL' | 'VIRTUAL'
+      day.byType[type] = { startTime: s.startTime, endTime: s.endTime }
+      if (type === 'PRESENTIAL' || !day.byType.PRESENTIAL) {
+        day.startTime = s.startTime
+        day.endTime = s.endTime
       }
     })
   }
@@ -85,7 +111,7 @@ import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 
 const TIMEZONE = 'America/Argentina/Buenos_Aires'
 
-export async function getAvailability(dateStr: string) {
+export async function getAvailability(dateStr: string, appointmentType?: 'PRESENTIAL' | 'VIRTUAL') {
   const dateOnly = dateStr.split('T')[0]
 
   const targetDateZoned = fromZonedTime(`${dateOnly}T00:00:00`, TIMEZONE)
@@ -117,8 +143,17 @@ export async function getAvailability(dateStr: string) {
     return { slots: [] }
   }
 
-  const [startHour, startMinute] = daySchedule.startTime.split(':').map(Number)
-  const [endHour, endMinute] = daySchedule.endTime.split(':').map(Number)
+  // Ventana específica del type (PRESENTIAL/VIRTUAL). Si no se especificó type, usa legacy.
+  const window = appointmentType
+    ? daySchedule.byType[appointmentType]
+    : { startTime: daySchedule.startTime, endTime: daySchedule.endTime }
+
+  if (!window) {
+    return { slots: [] }
+  }
+
+  const [startHour, startMinute] = window.startTime.split(':').map(Number)
+  const [endHour, endMinute] = window.endTime.split(':').map(Number)
 
   const formatTime = (h: number, m: number) =>
     `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`

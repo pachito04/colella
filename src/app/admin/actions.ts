@@ -257,7 +257,18 @@ export async function getPatientHistory(patientId: string) {
 // --- CMS: Success Stories ---
 export async function getSuccessStories() {
   await requireAdmin()
-  return await prisma.successStory.findMany({ orderBy: { order: 'asc' } })
+  return await prisma.successStory.findMany({
+    orderBy: { order: 'asc' },
+    include: { images: { orderBy: { order: 'asc' } } }
+  })
+}
+
+export async function getSuccessStoriesAdmin() {
+  await requireAdmin()
+  return await prisma.successStory.findMany({
+    orderBy: { order: 'asc' },
+    include: { images: { orderBy: { order: 'asc' } } }
+  })
 }
 
 export async function getReviews() {
@@ -288,24 +299,48 @@ export async function deleteReview(id: string) {
   revalidatePath('/')
 }
 
-export async function upsertSuccessStory(data: { id?: string, name: string, role: string, description?: string | null, imageUrl?: string, isActive: boolean }) {
+export async function upsertSuccessStory(data: {
+  id?: string,
+  name: string,
+  role: string,
+  description?: string | null,
+  imageUrl?: string,
+  images?: string[],
+  isActive: boolean
+}) {
   await requireAdmin()
-  if (data.id) {
+  const images = Array.isArray(data.images) ? data.images.filter(u => u && u.trim()) : []
+  const primary = data.imageUrl && data.imageUrl.trim() ? data.imageUrl : (images[0] || null)
+
+  let storyId = data.id
+  if (storyId) {
     await prisma.successStory.update({
-      where: { id: data.id },
-      data: { name: data.name, role: data.role, description: data.description, imageUrl: data.imageUrl, isActive: data.isActive }
+      where: { id: storyId },
+      data: { name: data.name, role: data.role, description: data.description, imageUrl: primary, isActive: data.isActive }
     })
   } else {
-    await prisma.successStory.create({
-      data: { name: data.name, role: data.role, description: data.description, imageUrl: data.imageUrl, isActive: data.isActive }
+    const created = await prisma.successStory.create({
+      data: { name: data.name, role: data.role, description: data.description, imageUrl: primary, isActive: data.isActive }
+    })
+    storyId = created.id
+  }
+
+  if (images.length > 0) {
+    // Replace all images con la nueva lista, mantiene orden determinista
+    await prisma.storyImage.deleteMany({ where: { storyId } })
+    await prisma.storyImage.createMany({
+      data: images.map((url, idx) => ({ storyId: storyId!, url, order: idx }))
     })
   }
+
   revalidatePath('/admin/cms')
   revalidatePath('/')
+  return { id: storyId }
 }
 
 export async function deleteSuccessStory(id: string) {
   await requireAdmin()
+  // storyImages se borran en cascada via FK onDelete: Cascade
   await prisma.successStory.delete({ where: { id } })
   revalidatePath('/admin/cms')
   revalidatePath('/')
@@ -358,16 +393,36 @@ export async function getWorkSchedule() {
   return await prisma.workSchedule.findMany({ orderBy: { dayOfWeek: 'asc' } })
 }
 
-export async function updateWorkSchedule(schedule: { dayOfWeek: number, startTime: string, endTime: string, isActive: boolean }[]) {
+export async function updateWorkSchedule(schedule: {
+  dayOfWeek: number,
+  type?: 'PRESENTIAL' | 'VIRTUAL',
+  startTime: string,
+  endTime: string,
+  isActive: boolean
+}[]) {
   await requireAdmin()
-  for (const day of schedule) {
-    await prisma.workSchedule.upsert({
-      where: { dayOfWeek: day.dayOfWeek },
-      update: { startTime: day.startTime, endTime: day.endTime, isActive: day.isActive },
-      create: { dayOfWeek: day.dayOfWeek, startTime: day.startTime, endTime: day.endTime, isActive: day.isActive }
-    })
+  try {
+    for (const day of schedule) {
+      const type: 'PRESENTIAL' | 'VIRTUAL' = day.type ?? 'PRESENTIAL'
+      await prisma.workSchedule.upsert({
+        where: { dayOfWeek_type: { dayOfWeek: day.dayOfWeek, type } },
+        update: { startTime: day.startTime, endTime: day.endTime, isActive: day.isActive },
+        create: { dayOfWeek: day.dayOfWeek, type, startTime: day.startTime, endTime: day.endTime, isActive: day.isActive }
+      })
+    }
+  } catch (e: any) {
+    console.error('[updateWorkSchedule] error:', e)
+    if (
+      String(e?.message || '').includes('dayOfWeek_type') ||
+      String(e?.code) === 'P2003' ||
+      (String(e?.message || '').toLowerCase().includes('column') && String(e?.message || '').toLowerCase().includes('type'))
+    ) {
+      throw new Error('La base de datos no tiene la columna `type` en WorkSchedule. Hay que correr `npx prisma migrate deploy` en el VPS.')
+    }
+    throw new Error(`Error guardando horarios: ${e?.message || 'desconocido'}`)
   }
   revalidatePath('/admin/settings')
+  revalidatePath('/')
 }
 
 export async function addAvailabilityOverride(data: { date: Date, startTime: string, endTime: string }) {
@@ -522,7 +577,7 @@ export async function createRecurringSlot(data: { dayOfWeek: number, startTime: 
 
   // Sincronizar con Google Calendar via n8n
   const settings = await prisma.globalSettings.findUnique({ where: { id: 'settings' } })
-  const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+  const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
   try {
     const res = await fetch(webhookUrl, {
       method: 'POST',
@@ -554,7 +609,7 @@ export async function deleteRecurringSlot(id: string) {
 
   // Eliminar evento de Google Calendar via n8n
   if (slot?.calendarEventId) {
-    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
     try {
       const res = await fetch(webhookUrl, {
         method: 'POST',
@@ -594,7 +649,7 @@ export async function deletePatient(patientId: string) {
   // Desactivar y borrar de Calendar cualquier turno fijo activo
   for (const slot of patient.recurringSlots) {
     if (slot.calendarEventId) {
-      const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+      const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
       try {
         await fetch(webhookUrl, {
           method: 'POST',
@@ -642,6 +697,13 @@ export async function searchPatients(query: string) {
 // --- Excepciones de Turnos Fijos ---
 export async function addRecurringSlotException(data: { recurringSlotId: string, date: Date, reason?: string }) {
   await requireAdmin()
+
+  // Traer datos del slot ANTES de crear la excepción (necesitamos patient para notificar)
+  const slot = await prisma.recurringSlot.findUnique({
+    where: { id: data.recurringSlotId },
+    include: { patient: true }
+  })
+
   await prisma.recurringSlotException.create({
     data: {
       recurringSlotId: data.recurringSlotId,
@@ -650,13 +712,9 @@ export async function addRecurringSlotException(data: { recurringSlotId: string,
     }
   })
 
-  // Eliminar la ocurrencia de Google Calendar via n8n
-  const slot = await prisma.recurringSlot.findUnique({
-    where: { id: data.recurringSlotId },
-    include: { patient: { select: { name: true } } }
-  })
+  // 1) Eliminar la ocurrencia de Google Calendar via n8n (workflow recurring-slot-sync)
   if (slot?.calendarEventId) {
-    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
     try {
       const res = await fetch(webhookUrl, {
         method: 'POST',
@@ -674,6 +732,29 @@ export async function addRecurringSlotException(data: { recurringSlotId: string,
       })
       console.log('[CalendarSync DeleteException]', res.status)
     } catch (e) { console.error('n8n Calendar DeleteException Error:', e) }
+  }
+
+  // 2) Notificar al paciente por WhatsApp via n8n (workflow day-blocked-notify)
+  if (slot?.patient?.phoneNumber) {
+    const [hh, mm] = slot.startTime.split(':').map(Number)
+    const originalDatetime = new Date(data.date)
+    originalDatetime.setUTCHours(hh + 3, mm, 0, 0)
+
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/day-blocked-notify'
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'recurring_exception',
+        appointmentId: data.recurringSlotId,
+        patientName: slot.patient.name || 'Paciente',
+        phone: slot.patient.phoneNumber,
+        email: slot.patient.email || '',
+        originalDatetime: originalDatetime.toISOString(),
+        reason: data.reason || 'motivos de fuerza mayor',
+        wasRefunded: false,
+      })
+    }).catch(err => console.error('n8n recurring exception notify error:', err))
   }
 
   revalidatePath('/admin/turnos-fijos')
@@ -696,7 +777,7 @@ export async function deleteRecurringSlotException(id: string) {
   await prisma.recurringSlotException.delete({ where: { id } })
 
   if (exception?.recurringSlot?.calendarEventId) {
-    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/recurring-slot-sync'
+    const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
     try {
       const res = await fetch(webhookUrl, {
         method: 'POST',
@@ -717,6 +798,51 @@ export async function deleteRecurringSlotException(id: string) {
 
   revalidatePath('/admin/turnos-fijos')
   revalidatePath('/')
+}
+
+export async function syncAllRecurringSlots() {
+  await requireAdmin()
+
+  const slots = await prisma.recurringSlot.findMany({
+    where: { isActive: true },
+    include: { patient: { select: { name: true } } }
+  })
+
+  const settings = await prisma.globalSettings.findUnique({ where: { id: 'settings' } })
+  const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
+
+  let synced = 0
+  let failed = 0
+
+  for (const slot of slots) {
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          slotId: slot.id,
+          dayOfWeek: slot.dayOfWeek,
+          startTime: slot.startTime,
+          patientName: slot.patient?.name || 'Paciente',
+          sessionDuration: settings?.sessionDuration || 30,
+        })
+      })
+      if (res.ok) {
+        synced++
+        console.log(`[CalendarSync Bulk] OK slotId=${slot.id} day=${slot.dayOfWeek} time=${slot.startTime}`)
+      } else {
+        failed++
+        console.error(`[CalendarSync Bulk] FAIL slotId=${slot.id} status=${res.status}`)
+      }
+    } catch (e) {
+      failed++
+      console.error(`[CalendarSync Bulk] ERROR slotId=${slot.id}`, e)
+    }
+  }
+
+  revalidatePath('/admin/turnos-fijos')
+  return { synced, failed, total: slots.length }
 }
 
 export async function getRecurringSlotExceptions(recurringSlotId: string) {
