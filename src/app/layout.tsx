@@ -18,12 +18,15 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://fedecolellafisio.com'),
   title: "Lic. Federico Colella | Kinesiología Deportiva",
   description: "Kinesiología Deportiva de Alto Rendimiento. Recuperación de lesiones y optimización del movimiento.",
   manifest: '/manifest.json',
   themeColor: '#0d9488',
   icons: {
-    icon: '/assets/logo/iso_sobre_color.jpg',
+    icon: [
+      { url: '/assets/logo/iso_sobre_color.jpg', type: 'image/jpeg' },
+    ],
     apple: [
       { url: '/assets/logo/iso_sobre_color.jpg', sizes: '180x180', type: 'image/jpeg' },
     ],
@@ -33,13 +36,12 @@ export const metadata: Metadata = {
     capable: true,
     title: 'Fede Colella',
     statusBarStyle: 'black-translucent',
-    startupImage: '/assets/logo/iso_sobre_color.jpg',
   },
   openGraph: {
     title: 'Lic. Federico Colella | Kinesiología Deportiva',
-    description: 'Recuperación de lesiones y optimización del movimiento con atención personalizada.',
+    description: 'Turnos de kinesiología deportiva con el Lic. Federico Colella. Recuperación de lesiones y optimización del movimiento.',
     url: 'https://fedecolellafisio.com',
-    siteName: 'Federico Colella',
+    siteName: 'Federico Colella - Kinesiología',
     type: 'website',
     locale: 'es_AR',
     images: [
@@ -54,7 +56,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Lic. Federico Colella | Kinesiología Deportiva',
-    description: 'Recuperación de lesiones y optimización del movimiento con atención personalizada.',
+    description: 'Turnos de kinesiología deportiva con el Lic. Federico Colella.',
     images: ['/assets/logo/logo_sin_matricula_sobre_color.jpg'],
   },
 };

@@ -120,14 +120,14 @@ export function BookingWidget() {
   useEffect(() => {
     if (selectedDate) {
       setLoadingSlots(true)
-      getAvailability(selectedDate.toISOString())
+      getAvailability(selectedDate.toISOString(), appointmentType)
         .then((data) => {
           setSlots(data.slots)
           setLoadingSlots(false)
         })
         .catch(() => setLoadingSlots(false))
     }
-  }, [selectedDate])
+  }, [selectedDate, appointmentType])
 
   const rightColumnRef = useRef<HTMLDivElement | null>(null)
   const prevStepRef = useRef(step)

@@ -155,12 +155,20 @@ model PriceLog {
   createdAt DateTime @default(now())
 }
 
+enum ScheduleType {
+  PRESENTIAL
+  VIRTUAL
+}
+
 model WorkSchedule {
-  id        String  @id @default(cuid())
-  dayOfWeek Int     @unique
+  id        String        @id @default(cuid())
+  dayOfWeek Int
+  type      ScheduleType  @default(PRESENTIAL)
   startTime String
   endTime   String
-  isActive  Boolean @default(true)
+  isActive  Boolean       @default(true)
+
+  @@unique([dayOfWeek, type])
 }
 
 model RecurringSlot {
@@ -205,15 +213,27 @@ model AvailabilityOverride {
 }
 
 model SuccessStory {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   name        String
   role        String
   description String?
-  imageUrl    String?
-  order       Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  imageUrl    String?       // Deprecated: primera imagen para compatibilidad. Usar `images`.
+  images      StoryImage[]
+  order       Int           @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model StoryImage {
+  id        String       @id @default(cuid())
+  storyId   String
+  story     SuccessStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  url       String
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
+
+  @@index([storyId])
 }
 
 model Review {

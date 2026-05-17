@@ -18,8 +18,10 @@ type Settings = {
     vacationMessage?: string | null
 }
 
+type ScheduleType = 'PRESENTIAL' | 'VIRTUAL'
 type Schedule = {
     dayOfWeek: number
+    type?: ScheduleType
     startTime: string
     endTime: string
     isActive: boolean
@@ -80,31 +82,72 @@ export function SettingsManager({
     }
 
     // -- Schedule --
-    // Map array to object for easier editing
-    const [schedule, setSchedule] = useState(() => {
-        const map: Record<number, Schedule> = {}
-        // Initialize defaults for all days if not present
+    // Key: `${day}-${type}` -> allows independent ventanas para PRESENCIAL y VIRTUAL.
+    const SCHEDULE_TYPES: ScheduleType[] = ['PRESENTIAL', 'VIRTUAL']
+    const scheduleKey = (day: number, type: ScheduleType) => `${day}-${type}`
+    const [schedule, setSchedule] = useState<Record<string, Schedule>>(() => {
+        const map: Record<string, Schedule> = {}
         for (let i = 0; i <= 6; i++) {
-            const existing = initialSchedule.find(s => s.dayOfWeek === i)
-            if (existing) map[i] = existing
-            else map[i] = { dayOfWeek: i, startTime: '09:00', endTime: '18:00', isActive: false }
+            for (const t of SCHEDULE_TYPES) {
+                const existing = initialSchedule.find(s => s.dayOfWeek === i && (s.type ?? 'PRESENTIAL') === t)
+                map[scheduleKey(i, t)] = existing
+                    ? { dayOfWeek: i, type: t, startTime: existing.startTime, endTime: existing.endTime, isActive: existing.isActive }
+                    : { dayOfWeek: i, type: t, startTime: t === 'VIRTUAL' ? '09:00' : '13:00', endTime: t === 'VIRTUAL' ? '20:00' : '18:00', isActive: false }
+            }
         }
         return map
     })
     const [isSavingSchedule, setIsSavingSchedule] = useState(false)
+    const [scheduleSaveStatus, setScheduleSaveStatus] = useState<{ kind: 'idle' | 'ok' | 'err', msg?: string }>({ kind: 'idle' })
 
-    const handleScheduleChange = (day: number, field: keyof Schedule, value: any) => {
+    // Re-sync from server data after refresh so admin sees what was actually persisted.
+    useEffect(() => {
+        setSchedule(() => {
+            const map: Record<string, Schedule> = {}
+            for (let i = 0; i <= 6; i++) {
+                for (const t of SCHEDULE_TYPES) {
+                    const existing = initialSchedule.find(s => s.dayOfWeek === i && (s.type ?? 'PRESENTIAL') === t)
+                    map[scheduleKey(i, t)] = existing
+                        ? { dayOfWeek: i, type: t, startTime: existing.startTime, endTime: existing.endTime, isActive: existing.isActive }
+                        : { dayOfWeek: i, type: t, startTime: t === 'VIRTUAL' ? '09:00' : '13:00', endTime: t === 'VIRTUAL' ? '20:00' : '18:00', isActive: false }
+                }
+            }
+            return map
+        })
+    }, [initialSchedule])
+
+    const handleScheduleChange = (day: number, type: ScheduleType, field: keyof Schedule, value: any) => {
+        const k = scheduleKey(day, type)
         setSchedule(prev => ({
             ...prev,
-            [day]: { ...prev[day], [field]: value }
+            [k]: { ...prev[k], [field]: value }
         }))
+        setScheduleSaveStatus({ kind: 'idle' })
     }
 
     const saveSchedule = async () => {
         setIsSavingSchedule(true)
-        await updateWorkSchedule(Object.values(schedule))
-        setIsSavingSchedule(false)
-        router.refresh()
+        setScheduleSaveStatus({ kind: 'idle' })
+        try {
+            // Validar inputs antes de enviar — un endTime <= startTime guarda silenciosamente y rompe getAvailability.
+            for (const row of Object.values(schedule)) {
+                if (!row.isActive) continue
+                if (!row.startTime || !row.endTime) {
+                    throw new Error(`Faltan horarios en ${DAYS[row.dayOfWeek]} (${row.type === 'VIRTUAL' ? 'Virtual' : 'Presencial'})`)
+                }
+                if (row.startTime >= row.endTime) {
+                    throw new Error(`En ${DAYS[row.dayOfWeek]} (${row.type === 'VIRTUAL' ? 'Virtual' : 'Presencial'}) el horario de inicio debe ser anterior al de fin.`)
+                }
+            }
+            await updateWorkSchedule(Object.values(schedule))
+            setScheduleSaveStatus({ kind: 'ok', msg: 'Horarios guardados correctamente.' })
+            router.refresh()
+        } catch (err: any) {
+            console.error('Schedule save error:', err)
+            setScheduleSaveStatus({ kind: 'err', msg: err?.message || 'Error guardando horarios. Volvé a intentar.' })
+        } finally {
+            setIsSavingSchedule(false)
+        }
     }
 
     const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -329,53 +372,68 @@ export function SettingsManager({
             <section className="bg-white dark:bg-neutral-800 p-6 rounded-xl shadow-sm border dark:border-neutral-700">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold">Horarios Semanales</h2>
-                    <Button onClick={saveSchedule} disabled={isSavingSchedule}>
-                        {isSavingSchedule ? 'Guardando...' : 'Guardar Horarios'}
-                    </Button>
+                    <div className="flex flex-col items-end gap-1">
+                        <Button onClick={saveSchedule} disabled={isSavingSchedule}>
+                            {isSavingSchedule ? 'Guardando...' : 'Guardar Horarios'}
+                        </Button>
+                        {scheduleSaveStatus.kind === 'ok' && (
+                            <span className="text-xs text-green-600 dark:text-green-400">✓ {scheduleSaveStatus.msg}</span>
+                        )}
+                        {scheduleSaveStatus.kind === 'err' && (
+                            <span className="text-xs text-red-600 dark:text-red-400 max-w-xs text-right">⚠ {scheduleSaveStatus.msg}</span>
+                        )}
+                    </div>
                 </div>
+                <p className="text-sm text-gray-500 mb-4">Cada día tiene dos ventanas independientes: <b>Presencial</b> y <b>Virtual</b>. Comparten los mismos slots — si alguien reserva online a las 14, ese horario queda ocupado para el presencial también.</p>
                 <div className="space-y-4">
-                    {DAYS.map((dayName, idx) => (
-                        <div key={idx} className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-4 rounded-xl border transition-colors ${schedule[idx].isActive ? 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 shadow-sm' : 'bg-gray-50 dark:bg-neutral-900 border-transparent opacity-60'}`}>
-                            <div className="flex items-center gap-3 min-w-[140px]">
-                                <div className="relative flex items-center">
-                                    <input 
-                                        type="checkbox"
-                                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 bg-white checked:bg-teal-600 checked:border-teal-600 focus:ring-2 focus:ring-teal-500/20 transition-all dark:border-neutral-600 dark:bg-neutral-800"
-                                        checked={schedule[idx].isActive}
-                                        onChange={(e) => handleScheduleChange(idx, 'isActive', e.target.checked)}
-                                    />
-                                    <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                    </span>
-                                </div>
-                                <span className={cn("font-bold text-base", schedule[idx].isActive ? "text-gray-900 dark:text-white" : "text-gray-500")}>{dayName}</span>
+                    {DAYS.map((dayName, idx) => {
+                        const presK = scheduleKey(idx, 'PRESENTIAL')
+                        const virtK = scheduleKey(idx, 'VIRTUAL')
+                        const presActive = schedule[presK].isActive
+                        const virtActive = schedule[virtK].isActive
+                        const anyActive = presActive || virtActive
+                        return (
+                        <div key={idx} className={`rounded-xl border p-4 ${anyActive ? 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 shadow-sm' : 'bg-gray-50 dark:bg-neutral-900 border-transparent opacity-70'}`}>
+                            <div className={cn("font-bold text-base mb-3", anyActive ? "text-gray-900 dark:text-white" : "text-gray-500")}>{dayName}</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {SCHEDULE_TYPES.map(t => {
+                                    const k = scheduleKey(idx, t)
+                                    const row = schedule[k]
+                                    const label = t === 'PRESENTIAL' ? 'Presencial' : 'Virtual'
+                                    return (
+                                        <div key={t} className={`flex items-center gap-3 p-3 rounded-lg border ${row.isActive ? 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700' : 'bg-gray-50/50 dark:bg-neutral-900/50 border-transparent'}`}>
+                                            <label className="flex items-center gap-2 min-w-[110px]">
+                                                <input
+                                                    type="checkbox"
+                                                    className="h-5 w-5 rounded-md border-gray-300 accent-teal-600 cursor-pointer"
+                                                    checked={row.isActive}
+                                                    onChange={(e) => handleScheduleChange(idx, t, 'isActive', e.target.checked)}
+                                                />
+                                                <span className={cn("font-medium text-sm", row.isActive ? "text-gray-900 dark:text-white" : "text-gray-500")}>{label}</span>
+                                            </label>
+                                            {row.isActive && (
+                                                <div className="flex items-center gap-2 flex-1">
+                                                    <input
+                                                        type="time"
+                                                        className="h-9 flex-1 sm:w-28 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:bg-neutral-900 dark:border-neutral-700"
+                                                        value={row.startTime}
+                                                        onChange={(e) => handleScheduleChange(idx, t, 'startTime', e.target.value)}
+                                                    />
+                                                    <span className="text-gray-400 text-xs">a</span>
+                                                    <input
+                                                        type="time"
+                                                        className="h-9 flex-1 sm:w-28 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:bg-neutral-900 dark:border-neutral-700"
+                                                        value={row.endTime}
+                                                        onChange={(e) => handleScheduleChange(idx, t, 'endTime', e.target.value)}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
                             </div>
-                            
-                            {schedule[idx].isActive && (
-                                <div className="flex items-center gap-3 flex-1 w-full sm:w-auto pl-8 sm:pl-0 animate-in fade-in slide-in-from-left-2 duration-300">
-                                    <div className="relative flex-1 sm:flex-none">
-                                        <input 
-                                            type="time" 
-                                            className="h-10 w-full sm:w-32 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/20 focus-visible:border-teal-500 transition-all dark:bg-neutral-900 dark:border-neutral-700"
-                                            value={schedule[idx].startTime}
-                                            onChange={(e) => handleScheduleChange(idx, 'startTime', e.target.value)}
-                                        />
-                                    </div>
-                                    <span className="text-gray-400 font-medium">a</span>
-                                    <div className="relative flex-1 sm:flex-none">
-                                        <input 
-                                            type="time" 
-                                            className="h-10 w-full sm:w-32 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/20 focus-visible:border-teal-500 transition-all dark:bg-neutral-900 dark:border-neutral-700"
-                                            value={schedule[idx].endTime}
-                                            onChange={(e) => handleScheduleChange(idx, 'endTime', e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            )}
                         </div>
-                    ))}
+                    )})}
                 </div>
             </section>
 

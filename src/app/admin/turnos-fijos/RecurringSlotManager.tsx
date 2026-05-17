@@ -4,8 +4,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Trash2, Plus, Search, Clock, User, Repeat, CalendarOff, ChevronDown, ChevronUp } from 'lucide-react'
-import { createRecurringSlot, deleteRecurringSlot, searchPatients, addRecurringSlotException, deleteRecurringSlotException } from '../actions'
+import { Trash2, Plus, Search, Clock, User, Repeat, CalendarOff, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { createRecurringSlot, deleteRecurringSlot, searchPatients, addRecurringSlotException, deleteRecurringSlotException, syncAllRecurringSlots } from '../actions'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -60,6 +60,7 @@ export function RecurringSlotManager({
   const [expandedSlot, setExpandedSlot] = useState<string | null>(null)
   const [exceptionDate, setExceptionDate] = useState('')
   const [exceptionReason, setExceptionReason] = useState('')
+  const [isSyncing, setIsSyncing] = useState(false)
 
   const activeDays = schedule.filter(s => s.isActive)
 
@@ -145,6 +146,21 @@ export function RecurringSlotManager({
       } : s))
       toast.success('Excepcion eliminada')
     } catch { toast.error('Error al eliminar excepcion') }
+  }
+
+  const handleSyncAll = async () => {
+    setIsSyncing(true)
+    try {
+      const result = await syncAllRecurringSlots()
+      if (result.failed === 0) {
+        toast.success(`${result.synced} turno${result.synced !== 1 ? 's' : ''} sincronizado${result.synced !== 1 ? 's' : ''} con Google Calendar`)
+      } else {
+        toast.warning(`${result.synced} sincronizados, ${result.failed} fallaron — revisá los logs`)
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error al sincronizar')
+    }
+    setIsSyncing(false)
   }
 
   const resetForm = () => {
@@ -252,9 +268,21 @@ export function RecurringSlotManager({
 
       {/* Add New Slot */}
       {!isAdding ? (
-        <Button onClick={() => setIsAdding(true)} className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl">
-          <Plus className="w-4 h-4 mr-2" /> Agregar Turno Fijo
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={() => setIsAdding(true)} className="bg-teal-600 hover:bg-teal-700 text-white rounded-xl">
+            <Plus className="w-4 h-4 mr-2" /> Agregar Turno Fijo
+          </Button>
+          {slots.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleSyncAll}
+              disabled={isSyncing}
+              className="rounded-xl border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
+              <RefreshCw className={cn("w-4 h-4 mr-2", isSyncing && "animate-spin")} />
+              {isSyncing ? 'Sincronizando...' : 'Sincronizar Google Calendar'}
+            </Button>
+          )}
+        </div>
       ) : (
         <Card className="p-6 bg-white dark:bg-neutral-900 border-gray-100 dark:border-neutral-800 space-y-5">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Nuevo Turno Fijo</h3>

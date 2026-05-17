@@ -121,6 +121,7 @@ export async function cancelAppointment(appointmentId: string) {
         })
 
         revalidatePath('/dashboard/appointments')
+        revalidatePath('/')
         return { success: true, message: "Turno cancelado exitosamente." + refundMsg }
 
     } catch (error) {
