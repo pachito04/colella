@@ -61,20 +61,16 @@ export function Header() {
                 }
               }}
             >
-              <div className="relative h-12 w-12 overflow-hidden rounded-md transition-transform group-hover:scale-105">
+              <div className="relative h-11 w-44 sm:w-52 overflow-hidden transition-transform group-hover:scale-105">
                 <Image
-                  src="/assets/logo/iso_sobre_color.jpg"
+                  src="/assets/logo/logo_sin_matricula_sobre_color.jpg"
                   alt="Logo Federico Colella"
                   fill
-                  className="object-cover"
+                  className="object-contain object-left"
+                  priority
                 />
               </div>
-              <span className={cn(
-                "text-xl font-bold tracking-tight font-display transition-colors text-white",
-                 mobileMenuOpen ? "text-white" : ""
-              )}>
-                Federico Colella
-              </span>
+              <span className="sr-only">Federico Colella</span>
             </Link>
 
             {isAdmin && (

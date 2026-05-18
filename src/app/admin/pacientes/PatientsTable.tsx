@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Search, X, User, Phone, Mail, Calendar, FileText, ChevronRight, Trash2, AlertTriangle } from 'lucide-react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { deletePatient } from '../actions'
 
@@ -16,10 +16,11 @@ type Appointment = {
   depositPaid: boolean
   patientNotes?: string | null
   medicalReportUrl?: string | null
-  medicalFile?: {
+  medicalFiles?: {
+    id: string
     originalName: string
     size: number
-  } | null
+  }[]
   meetLink?: string | null
 }
 
@@ -55,10 +56,20 @@ export function PatientsTable({ patients }: { patients: Patient[] }) {
     }
   }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    router.push(`/admin/pacientes?q=${encodeURIComponent(search)}`)
-  }
+  // Filtro en vivo: matchea contra nombre, email y teléfono (sin Enter ni reload)
+  const norm = (s: string | null | undefined) => (s || '').toLowerCase().trim()
+  const filteredPatients = (() => {
+    const q = norm(search)
+    if (!q) return patients
+    const qDigits = q.replace(/\D/g, '')
+    return patients.filter(p => {
+      if (norm(p.name).includes(q)) return true
+      if (norm(p.email).includes(q)) return true
+      if (norm(p.phoneNumber).includes(q)) return true
+      if (qDigits.length >= 3 && norm(p.phoneNumber).replace(/\D/g, '').includes(qDigits)) return true
+      return false
+    })
+  })()
 
   const statusLabel: Record<string, string> = {
     CONFIRMED: 'Confirmado',
@@ -75,23 +86,40 @@ export function PatientsTable({ patients }: { patients: Patient[] }) {
   return (
     <>
       {/* Search */}
-      <form onSubmit={handleSearch} className="relative max-w-md">
+      <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar por nombre, email o teléfono..."
-          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm focus:outline-none focus:border-teal-500/50 transition-colors"
+          className="w-full pl-10 pr-10 py-3 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-sm focus:outline-none focus:border-teal-500/50 transition-colors"
         />
-      </form>
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors"
+            aria-label="Limpiar búsqueda"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {search && (
+        <p className="text-xs text-gray-500 -mt-4">
+          {filteredPatients.length} resultado{filteredPatients.length === 1 ? '' : 's'} de {patients.length} pacientes
+        </p>
+      )}
 
       {/* Table */}
       <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-gray-100 dark:border-neutral-800 overflow-hidden">
         <div className="divide-y divide-gray-100 dark:divide-neutral-800">
-          {patients.length === 0 && (
-            <div className="py-16 text-center text-gray-400">No se encontraron pacientes</div>
+          {filteredPatients.length === 0 && (
+            <div className="py-16 text-center text-gray-400">
+              {search ? `No se encontraron pacientes con "${search}"` : 'No se encontraron pacientes'}
+            </div>
           )}
-          {patients.map(patient => {
+          {filteredPatients.map(patient => {
             const confirmed = patient.appointments.filter(a => a.status === 'CONFIRMED').length
             const last = patient.appointments[0]
             return (
@@ -222,7 +250,7 @@ export function PatientsTable({ patients }: { patients: Patient[] }) {
               </div>
               <div className="text-center">
                 <p className="text-2xl font-black text-gray-900 dark:text-white">
-                  {selected.appointments.filter(a => a.medicalReportUrl).length}
+                  {selected.appointments.reduce((acc, a) => acc + (a.medicalFiles?.length || 0), 0)}
                 </p>
                 <p className="text-xs text-gray-400">Estudios</p>
               </div>
@@ -260,17 +288,22 @@ export function PatientsTable({ patients }: { patients: Patient[] }) {
                   {app.patientNotes && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 italic">"{app.patientNotes}"</p>
                   )}
-                  {app.medicalReportUrl && (
-                    <a
-                      href={app.medicalReportUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      download
-                      className="inline-flex items-center gap-1.5 text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline"
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      {app.medicalFile?.originalName || 'Ver estudio adjunto'}
-                    </a>
+                  {app.medicalFiles && app.medicalFiles.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      {app.medicalFiles.map(f => (
+                        <a
+                          key={f.id}
+                          href={`/api/medical-files/${app.id}?file=${f.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                          className="inline-flex items-center gap-1.5 text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline w-fit"
+                        >
+                          <FileText className="h-3.5 w-3.5 shrink-0" />
+                          {f.originalName}
+                        </a>
+                      ))}
+                    </div>
                   )}
                   {app.meetLink && (
                     <a

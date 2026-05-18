@@ -17,10 +17,12 @@ type Appointment = {
   }
   patientNotes?: string | null
   medicalReportUrl?: string | null
-  medicalFile?: {
+  medicalFiles?: {
+    id: string
     originalName: string
     size: number
-  } | null
+    mimeType?: string
+  }[]
 }
 
 interface AppointmentManagerProps {
@@ -93,22 +95,27 @@ export function AppointmentManager({ appointments }: AppointmentManagerProps) {
                                             </div>
                                         </div>
 
-                                        {(app.patientNotes || app.medicalReportUrl) && (
+                                        {(app.patientNotes || (app.medicalFiles && app.medicalFiles.length > 0)) && (
                                             <div className="p-3 bg-gray-50 dark:bg-neutral-800 rounded-xl border border-gray-100 dark:border-neutral-700 text-sm max-w-md">
                                                 <p className="font-bold text-gray-700 dark:text-gray-300 mb-1 text-xs uppercase tracking-wide">Información Médica</p>
                                                 {app.patientNotes && (
                                                     <p className="text-gray-600 dark:text-gray-400 mb-2 italic">"{app.patientNotes}"</p>
                                                 )}
-                                                {app.medicalReportUrl && (
-                                                    <a 
-                                                        href={app.medicalReportUrl} 
-                                                        target="_blank" 
-                                                        rel="noopener noreferrer"
-                                                        download
-                                                        className="inline-flex items-center gap-2 text-teal-600 dark:text-teal-400 font-bold hover:underline text-xs"
-                                                    >
-                                                        <span>📄 {app.medicalFile?.originalName || 'Ver Estudio Adjunto'}</span>
-                                                    </a>
+                                                {app.medicalFiles && app.medicalFiles.length > 0 && (
+                                                    <div className="space-y-1">
+                                                        {app.medicalFiles.map(f => (
+                                                            <a
+                                                                key={f.id}
+                                                                href={`/api/medical-files/${app.id}?file=${f.id}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                download
+                                                                className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-bold hover:underline text-xs"
+                                                            >
+                                                                <span>📄 {f.originalName}</span>
+                                                            </a>
+                                                        ))}
+                                                    </div>
                                                 )}
                                             </div>
                                         )}

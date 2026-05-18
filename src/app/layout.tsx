@@ -25,12 +25,12 @@ export const metadata: Metadata = {
   themeColor: '#0d9488',
   icons: {
     icon: [
-      { url: '/assets/logo/iso_sobre_color.jpg', type: 'image/jpeg' },
+      { url: '/assets/logo/logo_sin_matricula_sobre_color.jpg', type: 'image/jpeg' },
     ],
     apple: [
-      { url: '/assets/logo/iso_sobre_color.jpg', sizes: '180x180', type: 'image/jpeg' },
+      { url: '/assets/logo/logo_sin_matricula_sobre_color.jpg', sizes: '180x180', type: 'image/jpeg' },
     ],
-    shortcut: '/assets/logo/iso_sobre_color.jpg',
+    shortcut: '/assets/logo/logo_sin_matricula_sobre_color.jpg',
   },
   appleWebApp: {
     capable: true,
