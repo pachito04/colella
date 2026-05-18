@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 
+// Soporta dos formas:
+//   /api/medical-files/{appointmentId}        -> primer archivo del turno (compat)
+//   /api/medical-files/{appointmentId}?file={fileId} -> archivo específico
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ appointmentId: string }> }
 ) {
   const session = await auth()
@@ -13,15 +16,17 @@ export async function GET(
   }
 
   const { appointmentId } = await params
+  const url = new URL(request.url)
+  const fileIdParam = url.searchParams.get('file')
 
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
     include: {
-      medicalFile: true,
+      medicalFiles: { orderBy: { createdAt: 'asc' } },
     }
   })
 
-  if (!appointment || !appointment.medicalFile) {
+  if (!appointment || !appointment.medicalFiles || appointment.medicalFiles.length === 0) {
     return NextResponse.json({ error: 'Archivo no encontrado' }, { status: 404 })
   }
 
@@ -32,7 +37,13 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const file = appointment.medicalFile
+  const file = fileIdParam
+    ? appointment.medicalFiles.find(f => f.id === fileIdParam)
+    : appointment.medicalFiles[0]
+
+  if (!file) {
+    return NextResponse.json({ error: 'Archivo no encontrado' }, { status: 404 })
+  }
 
   return new NextResponse(Buffer.from(file.data), {
     status: 200,

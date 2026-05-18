@@ -264,10 +264,20 @@ export async function bookAppointment(formData: FormData) {
   const type = (formData.get('type') as string) || 'PRESENTIAL'
   const isDouble = formData.get('isDouble') === 'true'
   const patientNotes = formData.get('patientNotes') as string | null
-  const medicalFile = formData.get('medicalFile') as File | null
+  // Soporta múltiples archivos: legacy `medicalFile` + nuevo `medicalFiles`
+  const rawFiles = [
+    ...formData.getAll('medicalFiles'),
+    ...formData.getAll('medicalFile'),
+  ].filter((f): f is File => f instanceof File && f.size > 0)
 
   if (!name || !phone || !date) {
     return { success: false, error: 'Missing required fields' }
+  }
+
+  const MAX_FILES = 5
+  const MAX_FILE_SIZE = 5 * 1024 * 1024
+  if (rawFiles.length > MAX_FILES) {
+    return { success: false, error: `Podés subir hasta ${MAX_FILES} archivos por turno.` }
   }
 
   const userId = session.user.id
@@ -280,49 +290,47 @@ export async function bookAppointment(formData: FormData) {
   }
 
   try {
-    let medicalReportUrl: string | null = null
-    let medicalFileData:
-      | {
-          fileName: string
-          originalName: string
-          mimeType: string
-          size: number
-          data: Buffer
-        }
-      | null = null
+    const medicalFilesData: {
+      fileName: string
+      originalName: string
+      mimeType: string
+      size: number
+      data: Buffer
+    }[] = []
 
-    if (medicalFile && medicalFile.size > 0) {
+    if (rawFiles.length > 0) {
       const validTypes = ['application/pdf', 'image/jpeg', 'image/png']
-      const maxSize = 5 * 1024 * 1024
 
-      if (!validTypes.includes(medicalFile.type)) {
-        return {
-          success: false,
-          error: 'Formato de archivo no válido. Solo PDF, JPG o PNG.'
+      for (const medicalFile of rawFiles) {
+        if (!validTypes.includes(medicalFile.type)) {
+          return {
+            success: false,
+            error: `Formato no válido para "${medicalFile.name}". Solo PDF, JPG o PNG.`
+          }
         }
-      }
 
-      if (medicalFile.size > maxSize) {
-        return {
-          success: false,
-          error: 'El archivo es demasiado grande (Máx 5MB).'
+        if (medicalFile.size > MAX_FILE_SIZE) {
+          return {
+            success: false,
+            error: `El archivo "${medicalFile.name}" supera los 5MB.`
+          }
         }
-      }
 
-      const bytes = await medicalFile.arrayBuffer()
-      const buffer = Buffer.from(bytes)
+        const bytes = await medicalFile.arrayBuffer()
+        const buffer = Buffer.from(bytes)
 
-      const fileName = `${Date.now()}-${randomUUID()}-${medicalFile.name.replace(
-        /\s+/g,
-        '-'
-      )}`
+        const fileName = `${Date.now()}-${randomUUID()}-${medicalFile.name.replace(
+          /\s+/g,
+          '-'
+        )}`
 
-      medicalFileData = {
-        fileName,
-        originalName: medicalFile.name,
-        mimeType: medicalFile.type,
-        size: medicalFile.size,
-        data: buffer
+        medicalFilesData.push({
+          fileName,
+          originalName: medicalFile.name,
+          mimeType: medicalFile.type,
+          size: medicalFile.size,
+          data: buffer,
+        })
       }
     }
 
@@ -427,25 +435,23 @@ export async function bookAppointment(formData: FormData) {
 
     const firstAppointment = appointments[0]
 
-    if (medicalFileData) {
-      const url = `/api/medical-files/${firstAppointment.id}`
-
-      const fileDataForPrisma = {
-        ...medicalFileData,
-        data: medicalFileData.data as unknown as Uint8Array<ArrayBuffer>
-      }
-      await prisma.appointmentFile.upsert({
-        where: { appointmentId: firstAppointment.id },
-        update: { ...fileDataForPrisma },
-        create: {
+    if (medicalFilesData.length > 0) {
+      // Crear todos los AppointmentFile en una sola query
+      await prisma.appointmentFile.createMany({
+        data: medicalFilesData.map(f => ({
           appointmentId: firstAppointment.id,
-          ...fileDataForPrisma
-        }
+          fileName: f.fileName,
+          originalName: f.originalName,
+          mimeType: f.mimeType,
+          size: f.size,
+          data: f.data as unknown as Uint8Array<ArrayBuffer>,
+        })),
       })
 
+      // medicalReportUrl apunta al endpoint del turno (sirve el primer archivo por compat)
       await prisma.appointment.update({
         where: { id: firstAppointment.id },
-        data: { medicalReportUrl: url }
+        data: { medicalReportUrl: `/api/medical-files/${firstAppointment.id}` }
       })
     }
 

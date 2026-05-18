@@ -384,14 +384,86 @@ export function BookingWidget() {
                           </div>
                         </header>
 
+                        {/* Selector PRESENCIAL / VIRTUAL — visible siempre en el paso de horarios */}
+                        <div className="mb-4 space-y-2">
+                          <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                            ¿Cómo querés la sesión?
+                          </label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => { setAppointmentType('PRESENTIAL'); setSlot(null) }}
+                              className={cn(
+                                "relative p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 group",
+                                appointmentType === 'PRESENTIAL'
+                                  ? "border-teal-500 bg-teal-500/10 shadow-lg shadow-teal-500/10"
+                                  : "border-neutral-800 bg-black/20 hover:border-neutral-600"
+                              )}
+                            >
+                              <MapPin className={cn(
+                                "w-6 h-6 transition-colors",
+                                appointmentType === 'PRESENTIAL' ? "text-teal-400" : "text-neutral-500"
+                              )} />
+                              <div className="text-center">
+                                <span className={cn(
+                                  "block text-sm font-black uppercase tracking-wider transition-colors",
+                                  appointmentType === 'PRESENTIAL' ? "text-teal-300" : "text-neutral-300"
+                                )}>
+                                  Consultorio
+                                </span>
+                                <span className="block text-[10px] text-neutral-500 mt-0.5 font-medium">Presencial</span>
+                              </div>
+                              {appointmentType === 'PRESENTIAL' && (
+                                <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-teal-500 text-white">✓</span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setAppointmentType('VIRTUAL'); setSlot(null) }}
+                              className={cn(
+                                "relative p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 group",
+                                appointmentType === 'VIRTUAL'
+                                  ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10"
+                                  : "border-neutral-800 bg-black/20 hover:border-neutral-600"
+                              )}
+                            >
+                              <Video className={cn(
+                                "w-6 h-6 transition-colors",
+                                appointmentType === 'VIRTUAL' ? "text-blue-400" : "text-neutral-500"
+                              )} />
+                              <div className="text-center">
+                                <span className={cn(
+                                  "block text-sm font-black uppercase tracking-wider transition-colors",
+                                  appointmentType === 'VIRTUAL' ? "text-blue-300" : "text-neutral-300"
+                                )}>
+                                  Online
+                                </span>
+                                <span className="block text-[10px] text-neutral-500 mt-0.5 font-medium">Por videollamada</span>
+                              </div>
+                              {appointmentType === 'VIRTUAL' && (
+                                <span className="absolute top-2 right-2 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500 text-white">✓</span>
+                              )}
+                            </button>
+                          </div>
+                          {appointmentType === 'VIRTUAL' && (
+                            <p className="text-[11px] text-blue-300/80 leading-relaxed bg-blue-500/5 border border-blue-500/20 rounded-xl p-2.5 flex gap-2">
+                              <Video className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                              <span>Sesión por <b>Google Meet</b> — pago anticipado completo</span>
+                            </p>
+                          )}
+                        </div>
+
                         {loadingSlots ? (
-                            <div className="flex flex-col items-center justify-center h-full space-y-4">
+                            <div className="flex flex-col items-center justify-center py-12 space-y-4">
                                 <Loader2 className="animate-spin h-10 w-10 text-teal-500" />
                                 <p className="text-sm text-neutral-400 font-medium tracking-wide">Buscando disponibilidad...</p>
                             </div>
                         ) : slots.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full p-8 bg-black/20 rounded-[2rem] border border-dashed border-neutral-800">
-                                <p className="text-neutral-500 font-medium mb-4 text-center">No hay horarios disponibles para esta fecha.</p>
+                            <div className="flex flex-col items-center justify-center py-12 p-8 bg-black/20 rounded-[2rem] border border-dashed border-neutral-800">
+                                <p className="text-neutral-500 font-medium mb-2 text-center">
+                                  No hay horarios <span className="font-bold">{appointmentType === 'VIRTUAL' ? 'online' : 'presenciales'}</span> disponibles para esta fecha.
+                                </p>
+                                <p className="text-neutral-600 text-xs text-center mb-4">Probá cambiar el tipo arriba o elegir otro día.</p>
                                 <Button variant="outline" onClick={() => setDate(undefined)} className="rounded-xl border-neutral-800 text-neutral-300 hover:bg-neutral-800 hover:text-white">Ver otros días</Button>
                             </div>
                         ) : (
@@ -541,38 +613,33 @@ export function BookingWidget() {
                          <form onSubmit={handleBooking} className="flex flex-col gap-6">
                               {/* Appointment Type Selector */}
                               {isMounted && (
-                                <div className="space-y-3">
-                                  <label className="block text-xs font-black uppercase tracking-widest text-gray-400">
-                                      Tipo de Atención
-                                  </label>
-                                  <div className="grid grid-cols-2 gap-4">
-                                      <button
-                                          type="button"
-                                          onClick={() => setAppointmentType('PRESENTIAL')}
-                                          className={cn(
-                                              "p-4 rounded-2xl border transition-all flex flex-col items-center gap-2",
-                                              appointmentType === 'PRESENTIAL' 
-                                                  ? "border-teal-500 bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400" 
-                                                  : "border-gray-100 dark:border-neutral-800 text-gray-400 hover:border-gray-200 dark:hover:border-neutral-700"
-                                          )}
-                                      >
-                                          <MapPin className="w-5 h-5" />
-                                          <span className="text-xs font-bold uppercase tracking-wider">Presencial</span>
-                                      </button>
-                                      <button
-                                          type="button"
-                                          onClick={() => setAppointmentType('VIRTUAL')}
-                                          className={cn(
-                                              "p-4 rounded-2xl border transition-all flex flex-col items-center gap-2",
-                                              appointmentType === 'VIRTUAL' 
-                                                  ? "border-teal-500 bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400" 
-                                                  : "border-gray-100 dark:border-neutral-800 text-gray-400 hover:border-gray-200 dark:hover:border-neutral-700"
-                                          )}
-                                      >
-                                          <Video className="w-5 h-5" />
-                                          <span className="text-xs font-bold uppercase tracking-wider">Virtual</span>
-                                      </button>
+                                <div className={cn(
+                                  "flex items-center justify-between gap-3 p-3 rounded-2xl border-2",
+                                  appointmentType === 'VIRTUAL'
+                                    ? "border-blue-500/40 bg-blue-500/5"
+                                    : "border-teal-500/40 bg-teal-500/5"
+                                )}>
+                                  <div className="flex items-center gap-2.5">
+                                    {appointmentType === 'VIRTUAL'
+                                      ? <Video className="w-5 h-5 text-blue-400" />
+                                      : <MapPin className="w-5 h-5 text-teal-400" />}
+                                    <div>
+                                      <span className="block text-[10px] font-black uppercase tracking-wider text-neutral-400">Tipo de sesión</span>
+                                      <span className={cn(
+                                        "block text-sm font-bold",
+                                        appointmentType === 'VIRTUAL' ? "text-blue-300" : "text-teal-300"
+                                      )}>
+                                        {appointmentType === 'VIRTUAL' ? 'Online (videollamada)' : 'Presencial (consultorio)'}
+                                      </span>
+                                    </div>
                                   </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setSlot(null); setStep('slot') }}
+                                    className="text-[10px] font-black uppercase tracking-wider text-neutral-400 hover:text-white px-2 py-1 rounded-lg hover:bg-neutral-800 transition-colors"
+                                  >
+                                    Cambiar
+                                  </button>
                                 </div>
                               )}
                               <div className="space-y-3">
@@ -707,19 +774,30 @@ export function BookingWidget() {
 
                                      <div className="space-y-3">
                                          <label className="block text-xs font-black uppercase tracking-widest text-neutral-400 flex justify-between">
-                                             <span>Adjuntar estudio (PDF/Imagen)</span>
-                                             <span className="text-[10px] font-bold opacity-50">MÁX 5MB</span>
+                                             <span>Adjuntar estudios (PDF/Imagen)</span>
+                                             <span className="text-[10px] font-bold opacity-50">Hasta 5 · MÁX 5MB c/u</span>
                                          </label>
                                          <div className="p-4 bg-black/20 border border-neutral-800 rounded-2xl">
-                                             <input 
-                                                 type="file" 
-                                                 name="medicalFile"
+                                             <input
+                                                 type="file"
+                                                 name="medicalFiles"
                                                  accept=".pdf,.jpg,.jpeg,.png"
+                                                 multiple
                                                  onChange={(e) => {
-                                                     const file = e.target.files?.[0];
-                                                     if (file && file.size > 5 * 1024 * 1024) {
-                                                         toast.error('El archivo es demasiado grande (Máx 5MB)');
-                                                         e.target.value = '';
+                                                     const files = Array.from(e.target.files || [])
+                                                     if (files.length > 5) {
+                                                         toast.error('Podés subir hasta 5 archivos por turno')
+                                                         e.target.value = ''
+                                                         return
+                                                     }
+                                                     const tooBig = files.find(f => f.size > 5 * 1024 * 1024)
+                                                     if (tooBig) {
+                                                         toast.error(`"${tooBig.name}" supera los 5MB`)
+                                                         e.target.value = ''
+                                                         return
+                                                     }
+                                                     if (files.length > 0) {
+                                                         toast.success(`${files.length} archivo${files.length === 1 ? '' : 's'} seleccionado${files.length === 1 ? '' : 's'}`)
                                                      }
                                                  }}
                                                  className="w-full text-sm text-neutral-500
@@ -730,6 +808,7 @@ export function BookingWidget() {
                                                  hover:file:bg-teal-500/20
                                                  cursor-pointer"
                                              />
+                                             <p className="text-[10px] text-neutral-500 mt-2 italic">Podés seleccionar varios archivos a la vez (Ctrl/Cmd + click)</p>
                                          </div>
                                      </div>
                                  </div>

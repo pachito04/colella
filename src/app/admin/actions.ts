@@ -31,7 +31,7 @@ export async function getAppointments(startDate?: string, endDate?: string) {
     where,
     include: {
       patient: true,
-      medicalFile: {
+      medicalFiles: {
         select: {
           id: true,
           fileName: true,
@@ -39,7 +39,8 @@ export async function getAppointments(startDate?: string, endDate?: string) {
           mimeType: true,
           size: true,
           createdAt: true,
-        }
+        },
+        orderBy: { createdAt: 'asc' },
       }
     },
     orderBy: { datetime: 'asc' },
@@ -50,10 +51,10 @@ export async function getAppointments(startDate?: string, endDate?: string) {
     datetime: app.datetime.toISOString(),
     createdAt: app.createdAt.toISOString(),
     updatedAt: app.updatedAt.toISOString(),
-    medicalFile: app.medicalFile ? {
-      ...app.medicalFile,
-      createdAt: app.medicalFile.createdAt.toISOString(),
-    } : null,
+    medicalFiles: Array.isArray(app.medicalFiles) ? app.medicalFiles.map((f: any) => ({
+      ...f,
+      createdAt: f.createdAt.toISOString(),
+    })) : [],
   }))
 }
 
@@ -176,7 +177,7 @@ export async function getPatients(search?: string) {
     include: {
       appointments: {
         include: {
-          medicalFile: {
+          medicalFiles: {
             select: {
               id: true,
               fileName: true,
@@ -184,7 +185,8 @@ export async function getPatients(search?: string) {
               mimeType: true,
               size: true,
               createdAt: true,
-            }
+            },
+            orderBy: { createdAt: 'asc' },
           },
         },
         orderBy: { datetime: 'desc' },
@@ -202,10 +204,10 @@ export async function getPatients(search?: string) {
       datetime: a.datetime.toISOString(),
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
-      medicalFile: a.medicalFile ? {
-        ...a.medicalFile,
-        createdAt: a.medicalFile.createdAt.toISOString(),
-      } : null,
+      medicalFiles: Array.isArray(a.medicalFiles) ? a.medicalFiles.map((f: any) => ({
+        ...f,
+        createdAt: f.createdAt.toISOString(),
+      })) : [],
     }))
   }))
 }
@@ -219,7 +221,7 @@ export async function getPatientHistory(patientId: string) {
     include: {
       appointments: {
         include: {
-          medicalFile: {
+          medicalFiles: {
             select: {
               id: true,
               fileName: true,
@@ -227,7 +229,8 @@ export async function getPatientHistory(patientId: string) {
               mimeType: true,
               size: true,
               createdAt: true,
-            }
+            },
+            orderBy: { createdAt: 'asc' },
           },
         },
         orderBy: { datetime: 'desc' },
@@ -246,10 +249,10 @@ export async function getPatientHistory(patientId: string) {
       datetime: a.datetime.toISOString(),
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
-      medicalFile: a.medicalFile ? {
-        ...a.medicalFile,
-        createdAt: a.medicalFile.createdAt.toISOString(),
-      } : null,
+      medicalFiles: Array.isArray(a.medicalFiles) ? a.medicalFiles.map((f: any) => ({
+        ...f,
+        createdAt: f.createdAt.toISOString(),
+      })) : [],
     }))
   }
 }
