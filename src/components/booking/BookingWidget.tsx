@@ -7,7 +7,7 @@ import { DayPicker } from 'react-day-picker'
 import { format, startOfToday, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Calendar as CalendarIcon, Clock, User, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, MapPin, Video, Copy, Check } from 'lucide-react'
+import { Loader2, Calendar as CalendarIcon, Clock, User, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, MapPin, Video } from 'lucide-react'
 import { useSession, signIn } from "next-auth/react"
 import { useSearchParams } from "next/navigation"
 
@@ -17,7 +17,8 @@ import { getAvailability, bookAppointment } from '@/app/actions'
 import { getPublicConfig } from '@/app/public-config' // New action
 import { cn } from '@/lib/utils'
 import { PhoneInput } from '@/components/ui/phone-input'
-import { BookingTimer } from './BookingTimer'
+// BookingTimer removido — el auto-redirect a MP elimina la pantalla intermedia con countdown.
+// import { BookingTimer } from './BookingTimer'
 
 import { isValidPhoneNumber, type Value } from 'react-phone-number-input'
 import { Checkbox } from "@/components/ui/checkbox"
@@ -65,23 +66,8 @@ export function BookingWidget() {
     price: number,
     duration: number,
     depositPercentage: number,
-    paymentAlias: string | null,
-    paymentCbu: string | null,
-    paymentHolder: string | null,
   } | null>(null)
-  const [aliasCopied, setAliasCopied] = useState(false)
-
-  const copyAlias = async () => {
-    if (!config?.paymentAlias) return
-    try {
-      await navigator.clipboard.writeText(config.paymentAlias)
-      setAliasCopied(true)
-      toast.success('Alias copiado')
-      setTimeout(() => setAliasCopied(false), 2000)
-    } catch {
-      toast.error('No se pudo copiar')
-    }
-  }
+  // (Alias / CBU se mandan por WhatsApp post-pago, no se muestran en la web.)
 
   useEffect(() => {
       setIsMounted(true)
@@ -233,11 +219,22 @@ export function BookingWidget() {
 
     try {
       const res = await bookAppointment(formData)
-      
+
       if (res.success) {
         setPaymentUrl(res.paymentUrl || null)
         setBookingStatus('success')
         setStep('confirmation')
+
+        // Auto-redirect a Mercado Pago: sin pantalla intermedia, llevamos al
+        // paciente directo a pagar. La pantalla 'confirmation' funciona como
+        // fallback si el redirect falla (popup blocker o connection lenta).
+        if (res.paymentUrl) {
+          const url = res.paymentUrl
+          // pequeño delay para que el estado renderice y el browser no aborte
+          setTimeout(() => {
+            try { window.location.assign(url) } catch {}
+          }, 250)
+        }
       } else {
         if (res.error) {
              toast.error(res.error)
@@ -736,27 +733,7 @@ export function BookingWidget() {
                                                 ${(config.price * (1 - config.depositPercentage / 100) * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                              </span>
                                          </div>
-                                         {config.paymentAlias && (
-                                           <div className="mt-3 pt-3 border-t border-neutral-800/50 space-y-2">
-                                              <p className="text-[10px] font-black uppercase tracking-widest text-teal-400">Para abonar el saldo restante</p>
-                                              <button
-                                                type="button"
-                                                onClick={copyAlias}
-                                                className="w-full flex items-center justify-between gap-2 p-3 rounded-xl bg-teal-500/10 border border-teal-500/30 hover:bg-teal-500/15 transition-colors"
-                                              >
-                                                <div className="text-left">
-                                                  <span className="block text-[9px] font-bold uppercase tracking-wider text-teal-400/70">Alias MercadoPago</span>
-                                                  <span className="block text-sm font-bold text-teal-300 select-all">{config.paymentAlias}</span>
-                                                  {config.paymentHolder && (
-                                                    <span className="block text-[10px] text-neutral-500 mt-0.5">A nombre de {config.paymentHolder}</span>
-                                                  )}
-                                                </div>
-                                                {aliasCopied
-                                                  ? <Check className="w-4 h-4 text-green-400 shrink-0" />
-                                                  : <Copy className="w-4 h-4 text-teal-400 shrink-0" />}
-                                              </button>
-                                           </div>
-                                         )}
+                                         {/* Alias removido de la web: ahora se manda solo via WhatsApp post-pago de seña. */}
                                        </>
                                      )}
                                  </div>
@@ -887,42 +864,35 @@ export function BookingWidget() {
                          initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                          className="flex flex-col items-center justify-center h-full text-center space-y-10 p-4"
                     >
+                        {/* Pantalla "redirigiendo a Mercado Pago" — la navegación se dispara desde handleBooking */}
                         <div className="relative">
-                           <div className="absolute inset-0 bg-green-500 blur-[60px] opacity-20 animate-pulse" />
-                           <div className="relative w-28 h-28 bg-green-500/20 rounded-full flex items-center justify-center border-2 border-green-500/30">
-                              <CheckCircle2 className="w-14 h-14 text-green-500" />
+                           <div className="absolute inset-0 bg-teal-500 blur-[60px] opacity-20 animate-pulse" />
+                           <div className="relative w-28 h-28 bg-teal-500/20 rounded-full flex items-center justify-center border-2 border-teal-500/30">
+                              <Loader2 className="w-14 h-14 text-teal-400 animate-spin" />
                            </div>
                         </div>
-                        
+
                         <div>
-                          <h3 className="text-3xl font-bold mb-3 tracking-tight text-white">¡Casi listo!</h3>
-                          <div className="flex justify-center mb-4">
-                            {!isExpired && (
-                                <BookingTimer 
-                                    durationMinutes={15} 
-                                    onExpire={() => setIsExpired(true)} 
-                                />
-                            )}
-                          </div>
+                          <h3 className="text-3xl font-bold mb-3 tracking-tight text-white">Redirigiendo a Mercado Pago…</h3>
                           <p className="text-neutral-400 max-w-sm mx-auto leading-relaxed">
-                            Hemos reservado {isDoubleSession ? 'tus 2 turnos consecutivos' : 'tu lugar'} temporalmente. Completá el pago de {appointmentType === 'VIRTUAL' ? 'la sesión' : 'la seña'} para confirmar definitivamente {isDoubleSession ? 'tus turnos' : 'tu turno'}.
+                            {isDoubleSession
+                              ? 'Reservamos tus 2 turnos consecutivos temporalmente.'
+                              : 'Reservamos tu lugar temporalmente.'}{' '}
+                            En un instante te llevamos al checkout para confirmar.
                           </p>
-                          {appointmentType !== 'VIRTUAL' && config.paymentAlias && (
-                            <div className="mt-4 mx-auto max-w-sm p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Para el 50% restante</p>
-                              <p className="text-sm font-bold text-amber-300 select-all">{config.paymentAlias}</p>
-                              {config.paymentHolder && (
-                                <p className="text-[10px] text-neutral-500 mt-0.5">A nombre de {config.paymentHolder}</p>
-                              )}
-                            </div>
-                          )}
                         </div>
 
                         <div className="w-full space-y-4">
                           {paymentUrl && !isExpired && (
-                              <Button size="lg" className="h-16 w-full text-lg font-bold rounded-2xl shadow-2xl shadow-green-500/20 bg-green-600 hover:bg-green-700 active:scale-95 transition-transform text-white" onClick={() => window.open(paymentUrl, '_blank')}>
-                                  {appointmentType === 'VIRTUAL' ? 'Pagar con Mercado Pago' : 'Pagar Seña con Mercado Pago'}
+                              <Button size="lg" className="h-16 w-full text-lg font-bold rounded-2xl shadow-2xl shadow-green-500/20 bg-green-600 hover:bg-green-700 active:scale-95 transition-transform text-white" onClick={() => { try { window.location.assign(paymentUrl) } catch { window.open(paymentUrl, '_blank') } }}>
+                                  Si no se abre, hacé clic acá
                               </Button>
+                          )}
+
+                          {!paymentUrl && (
+                              <div className="p-4 bg-amber-900/10 border border-amber-900/30 rounded-2xl text-amber-400 font-medium text-sm">
+                                  No pudimos generar el link de pago. Probá nuevamente en unos segundos.
+                              </div>
                           )}
 
                           {isExpired && (
@@ -930,14 +900,14 @@ export function BookingWidget() {
                                   El tiempo de reserva ha expirado. Por favor, selecciona un horario nuevamente.
                               </div>
                           )}
-                           <Button variant="ghost" className="w-full text-neutral-400 hover:text-white font-bold hover:bg-neutral-800" onClick={() => {
+                          <Button variant="ghost" className="w-full text-neutral-400 hover:text-white font-bold hover:bg-neutral-800" onClick={() => {
                                setDate(undefined);
                                setSlot(null);
                                setDoubleSession(false);
                                setStep('date');
-                           }}>
+                          }}>
                                Empezar de nuevo
-                           </Button>
+                          </Button>
                         </div>
                     </motion.div>
                 )}

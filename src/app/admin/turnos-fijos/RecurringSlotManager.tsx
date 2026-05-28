@@ -32,6 +32,7 @@ interface ScheduleDay {
   startTime: string
   endTime: string
   isActive: boolean
+  type?: 'PRESENTIAL' | 'VIRTUAL'
 }
 
 interface Patient {
@@ -62,10 +63,31 @@ export function RecurringSlotManager({
   const [exceptionReason, setExceptionReason] = useState('')
   const [isSyncing, setIsSyncing] = useState(false)
 
-  const activeDays = schedule.filter(s => s.isActive)
+  // El schema permite múltiples WorkSchedule por día (PRESENTIAL + VIRTUAL),
+  // pero los turnos fijos siempre son presenciales — deduplicamos por dayOfWeek
+  // tomando preferentemente la fila PRESENTIAL.
+  const activeDays = (() => {
+    const seen = new Set<number>()
+    const out: ScheduleDay[] = []
+    const sorted = [...schedule]
+      .filter(s => s.isActive)
+      .sort((a, b) => {
+        const aPres = a.type === 'PRESENTIAL' || !a.type ? 0 : 1
+        const bPres = b.type === 'PRESENTIAL' || !b.type ? 0 : 1
+        if (aPres !== bPres) return aPres - bPres
+        return a.dayOfWeek - b.dayOfWeek
+      })
+    for (const s of sorted) {
+      if (seen.has(s.dayOfWeek)) continue
+      seen.add(s.dayOfWeek)
+      out.push(s)
+    }
+    return out.sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+  })()
 
   const getTimeSlotsForDay = (dayOfWeek: number) => {
-    const day = schedule.find(s => s.dayOfWeek === dayOfWeek)
+    // Mismo criterio: agarrar la fila PRESENTIAL para los horarios
+    const day = activeDays.find(s => s.dayOfWeek === dayOfWeek)
     if (!day || !day.isActive) return []
     const [startH, startM] = day.startTime.split(':').map(Number)
     const [endH, endM] = day.endTime.split(':').map(Number)
