@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Archivos médicos de pacientes — NUNCA versionar ni servir públicamente
+public/uploads/
