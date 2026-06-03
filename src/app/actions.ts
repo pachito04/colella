@@ -32,7 +32,8 @@ type DaySchedule = {
 }
 
 // Seña por sesión: monto fijo si está configurado (>0), si no, el porcentaje.
-export function depositPerSession(cfg: { price: number; depositPercentage: number; depositFixedAmount?: number | null }): number {
+// (No exportada: en un módulo 'use server' los exports deben ser async.)
+function depositPerSession(cfg: { price: number; depositPercentage: number; depositFixedAmount?: number | null }): number {
   if (cfg.depositFixedAmount != null && cfg.depositFixedAmount > 0) {
     // No puede superar el valor de la sesión
     return Math.min(cfg.depositFixedAmount, cfg.price)
