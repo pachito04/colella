@@ -78,10 +78,13 @@ export async function POST(request: NextRequest) {
                 const duration = settings?.sessionDuration || 30;
                 const price = Number(settings?.currentPrice || 40000);
                 const depositPct = settings?.depositPercentage || 50;
+                const depositFixed = settings?.depositFixedAmount != null ? Number(settings.depositFixedAmount) : null;
                 const sessionsCount = freshAppointments.length;
                 const isVirtual = freshAppointment.type === 'VIRTUAL';
                 const totalPrice = price * sessionsCount;
-                const depositPaidAmount = isVirtual ? totalPrice : (price * depositPct / 100) * sessionsCount;
+                // Seña por sesión: monto fijo si está configurado (>0), si no el %.
+                const depositPerSession = (depositFixed != null && depositFixed > 0) ? Math.min(depositFixed, price) : (price * depositPct / 100);
+                const depositPaidAmount = isVirtual ? totalPrice : depositPerSession * sessionsCount;
                 const remainingAmount = isVirtual ? 0 : (totalPrice - depositPaidAmount);
 
                 const appointmentZoned = toZonedTime(freshAppointment.datetime, TIMEZONE);

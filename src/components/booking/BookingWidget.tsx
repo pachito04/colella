@@ -66,8 +66,18 @@ export function BookingWidget() {
     price: number,
     duration: number,
     depositPercentage: number,
+    depositFixedAmount: number | null,
   } | null>(null)
   // (Alias / CBU se mandan por WhatsApp post-pago, no se muestran en la web.)
+
+  // Seña por sesión: monto fijo si está configurado (>0), si no el %.
+  const depositPerSession = (() => {
+    if (!config) return 0
+    if (config.depositFixedAmount != null && config.depositFixedAmount > 0) {
+      return Math.min(config.depositFixedAmount, config.price)
+    }
+    return config.price * (config.depositPercentage / 100)
+  })()
 
   useEffect(() => {
       setIsMounted(true)
@@ -724,13 +734,13 @@ export function BookingWidget() {
                                                  <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Asegura tu lugar</span>
                                              </div>
                                              <span className="text-lg font-bold text-teal-400">
-                                                ${(config.price * (config.depositPercentage / 100) * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
+                                                ${(depositPerSession * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                              </span>
                                          </div>
                                          <div className="pt-3 border-t border-neutral-800/50 flex justify-between items-center">
                                              <span className="text-xs font-medium text-neutral-500 italic">El saldo restante se abona el día de la sesión</span>
                                              <span className="text-xs font-bold text-neutral-500">
-                                                ${(config.price * (1 - config.depositPercentage / 100) * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
+                                                ${((config.price - depositPerSession) * (isDoubleSession ? 2 : 1)).toLocaleString('es-AR')}
                                              </span>
                                          </div>
                                          {/* Alias removido de la web: ahora se manda solo via WhatsApp post-pago de seña. */}

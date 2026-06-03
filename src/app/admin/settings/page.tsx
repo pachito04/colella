@@ -13,6 +13,7 @@ export default async function SettingsPage() {
   const serializedSettings = {
       ...settings,
       currentPrice: Number(settings.currentPrice),
+      depositFixedAmount: (settings as any).depositFixedAmount != null ? Number((settings as any).depositFixedAmount) : null,
       paymentAlias: (settings as any).paymentAlias ?? null,
       paymentCbu: (settings as any).paymentCbu ?? null,
       paymentHolder: (settings as any).paymentHolder ?? null,

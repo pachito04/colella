@@ -65,7 +65,10 @@ export async function getDashboardStats() {
   const settings = await prisma.globalSettings.findUnique({ where: { id: 'settings' } })
   const currentPrice = Number(settings?.currentPrice ?? 40000)
   const depositPercentage = settings?.depositPercentage ?? 50
-  const estimatedDepositAmount = currentPrice * (depositPercentage / 100)
+  const depositFixed = settings?.depositFixedAmount != null ? Number(settings.depositFixedAmount) : null
+  const estimatedDepositAmount = (depositFixed != null && depositFixed > 0)
+    ? Math.min(depositFixed, currentPrice)
+    : currentPrice * (depositPercentage / 100)
 
   const totalPatients = await prisma.user.count({
     where: { role: 'PATIENT' }
@@ -365,6 +368,7 @@ export async function updateGlobalSettings(data: {
   currentPrice: number,
   sessionDuration: number,
   depositPercentage: number,
+  depositFixedAmount?: number | null,
   paymentAlias?: string | null,
   paymentCbu?: string | null,
   paymentHolder?: string | null,
@@ -375,12 +379,15 @@ export async function updateGlobalSettings(data: {
   if (Number(settings.currentPrice) !== data.currentPrice) {
     await prisma.priceLog.create({ data: { price: data.currentPrice, adminId: user.id! } })
   }
+  // Normalizar el monto fijo: null/0 = usar porcentaje
+  const fixed = (data.depositFixedAmount != null && data.depositFixedAmount > 0) ? data.depositFixedAmount : null
   await prisma.globalSettings.update({
     where: { id: 'settings' },
     data: {
       currentPrice: data.currentPrice,
       sessionDuration: data.sessionDuration,
       depositPercentage: data.depositPercentage,
+      depositFixedAmount: fixed,
       paymentAlias: data.paymentAlias ?? null,
       paymentCbu: data.paymentCbu ?? null,
       paymentHolder: data.paymentHolder ?? null,
@@ -389,6 +396,7 @@ export async function updateGlobalSettings(data: {
   })
   revalidatePath('/admin/settings')
   revalidatePath('/booking')
+  revalidatePath('/')
 }
 
 export async function getWorkSchedule() {
@@ -610,6 +618,20 @@ export async function deleteRecurringSlot(id: string) {
     data: { isActive: false }
   })
 
+  // Limpiar los turnos YA MATERIALIZADOS a futuro de este turno fijo
+  // (el materializador crea Appointments reales 'appt_fixed_*'; al borrar el
+  // turno fijo hay que borrar esas ocurrencias futuras o el horario queda ocupado).
+  if (slot) {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM "Appointment" a
+       WHERE a.id LIKE 'appt_fixed_%' AND a.datetime > NOW()
+         AND a."patientId" = $1
+         AND EXTRACT(DOW FROM (a.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires')) = $2
+         AND to_char((a.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires'),'HH24:MI') = $3`,
+      slot.patientId, slot.dayOfWeek, slot.startTime
+    )
+  }
+
   // Eliminar evento de Google Calendar via n8n
   if (slot?.calendarEventId) {
     const webhookUrl = 'https://n8n.colella.gachetponzellini.com/webhook/HFB8jibX8wIjmTdT/webhook/recurring-slot-sync'
@@ -714,6 +736,24 @@ export async function addRecurringSlotException(data: { recurringSlotId: string,
       reason: data.reason || null,
     }
   })
+
+  // 0) Borrar el turno YA MATERIALIZADO de esa fecha puntual (si existe) para
+  // que el horario quede libre ese día (el materializador respeta excepciones,
+  // pero uno ya creado antes de la excepción hay que removerlo).
+  if (slot) {
+    const y = data.date.getUTCFullYear()
+    const m = String(data.date.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(data.date.getUTCDate()).padStart(2, '0')
+    const dateOnly = `${y}-${m}-${d}`
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM "Appointment" a
+       WHERE a.id LIKE 'appt_fixed_%'
+         AND a."patientId" = $1
+         AND (a.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires')::date = $2::date
+         AND to_char((a.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires'),'HH24:MI') = $3`,
+      slot.patientId, dateOnly, slot.startTime
+    )
+  }
 
   // 1) Eliminar la ocurrencia de Google Calendar via n8n (workflow recurring-slot-sync)
   if (slot?.calendarEventId) {

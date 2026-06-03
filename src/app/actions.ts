@@ -31,16 +31,27 @@ type DaySchedule = {
   byType: Partial<Record<'PRESENTIAL' | 'VIRTUAL', DayWindow>>
 }
 
+// Seña por sesión: monto fijo si está configurado (>0), si no, el porcentaje.
+export function depositPerSession(cfg: { price: number; depositPercentage: number; depositFixedAmount?: number | null }): number {
+  if (cfg.depositFixedAmount != null && cfg.depositFixedAmount > 0) {
+    // No puede superar el valor de la sesión
+    return Math.min(cfg.depositFixedAmount, cfg.price)
+  }
+  return cfg.price * (cfg.depositPercentage / 100)
+}
+
 async function getSystemConfig(targetDate?: Date) {
   const config: {
     price: number
     duration: number
     depositPercentage: number
+    depositFixedAmount: number | null
     schedule: Record<number, DaySchedule>
   } = {
     price: 40000,
     duration: 30,
     depositPercentage: 50,
+    depositFixedAmount: null,
     schedule: {}
   }
 
@@ -52,6 +63,7 @@ async function getSystemConfig(targetDate?: Date) {
     config.price = Number(settings.currentPrice)
     config.duration = settings.sessionDuration
     config.depositPercentage = settings.depositPercentage
+    config.depositFixedAmount = settings.depositFixedAmount != null ? Number(settings.depositFixedAmount) : null
   }
 
   let override = null
@@ -334,12 +346,12 @@ export async function bookAppointment(formData: FormData) {
       }
     }
 
-    // Virtuales: se paga el total. Presenciales: solo seña.
+    // Virtuales: se paga el total. Presenciales: solo seña (monto fijo o %).
     const isVirtual = type === 'VIRTUAL'
     const sessionsCount = slotsToBook.length
     const amountToPay = isVirtual
       ? config.price * sessionsCount
-      : config.price * (config.depositPercentage / 100) * sessionsCount
+      : depositPerSession(config) * sessionsCount
 
     const appointments = await prisma.$transaction(async (tx: any) => {
       // Validar que ningún slot esté tomado
@@ -527,7 +539,7 @@ export async function getAppointmentPaymentUrl(appointmentId: string) {
   const isVirtual = appointment.type === 'VIRTUAL'
   const amountToPay = isVirtual
     ? config.price
-    : config.price * (config.depositPercentage / 100)
+    : depositPerSession(config)
   try {
     const url = await createPreferenceForAppointment(appointment, appointment.patient?.name || 'Paciente', appointment.patient?.email, amountToPay, isVirtual)
     return { success: true, url }

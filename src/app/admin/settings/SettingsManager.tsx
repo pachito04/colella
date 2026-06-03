@@ -12,6 +12,7 @@ type Settings = {
     currentPrice: number
     sessionDuration: number
     depositPercentage: number
+    depositFixedAmount?: number | null
     paymentAlias?: string | null
     paymentCbu?: string | null
     paymentHolder?: string | null
@@ -65,6 +66,10 @@ export function SettingsManager({
     // -- General Settings --
     const [settings, setSettings] = useState(initialSettings)
     const [isSavingSettings, setIsSavingSettings] = useState(false)
+    // Modo de seña: 'PERCENT' (por %) o 'FIXED' (monto fijo). Deriva del valor guardado.
+    const [depositMode, setDepositMode] = useState<'PERCENT' | 'FIXED'>(
+        (initialSettings.depositFixedAmount != null && Number(initialSettings.depositFixedAmount) > 0) ? 'FIXED' : 'PERCENT'
+    )
 
     const saveSettings = async () => {
         setIsSavingSettings(true)
@@ -72,6 +77,8 @@ export function SettingsManager({
             currentPrice: Number(settings.currentPrice),
             sessionDuration: Number(settings.sessionDuration),
             depositPercentage: Number(settings.depositPercentage),
+            // Si el modo es FIJO mandamos el monto; si es % mandamos null (usa el porcentaje)
+            depositFixedAmount: depositMode === 'FIXED' ? Number(settings.depositFixedAmount || 0) : null,
             paymentAlias: settings.paymentAlias || null,
             paymentCbu: settings.paymentCbu || null,
             paymentHolder: settings.paymentHolder || null,
@@ -309,15 +316,48 @@ export function SettingsManager({
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1">Porcentaje de Seña (%)</label>
-                        <input 
-                            type="number"
-                            min={1}
-                            max={100}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-neutral-900 dark:border-neutral-700"
-                            value={settings.depositPercentage}
-                            onChange={(e) => setSettings({...settings, depositPercentage: Number(e.target.value)})}
-                        />
+                        <label className="block text-sm font-medium mb-1">Seña</label>
+                        {/* Toggle: por porcentaje o monto fijo */}
+                        <div className="flex gap-2 mb-2">
+                            <button
+                                type="button"
+                                onClick={() => setDepositMode('PERCENT')}
+                                className={cn("flex-1 h-9 rounded-md text-xs font-bold border transition-colors",
+                                    depositMode === 'PERCENT'
+                                        ? "border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400"
+                                        : "border-gray-200 dark:border-neutral-700 text-gray-500")}
+                            >Porcentaje (%)</button>
+                            <button
+                                type="button"
+                                onClick={() => setDepositMode('FIXED')}
+                                className={cn("flex-1 h-9 rounded-md text-xs font-bold border transition-colors",
+                                    depositMode === 'FIXED'
+                                        ? "border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400"
+                                        : "border-gray-200 dark:border-neutral-700 text-gray-500")}
+                            >Monto fijo ($)</button>
+                        </div>
+                        {depositMode === 'PERCENT' ? (
+                            <input
+                                type="number" min={1} max={100}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:bg-neutral-900 dark:border-neutral-700"
+                                value={settings.depositPercentage}
+                                onChange={(e) => setSettings({...settings, depositPercentage: Number(e.target.value)})}
+                                placeholder="50"
+                            />
+                        ) : (
+                            <input
+                                type="number" min={0}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:bg-neutral-900 dark:border-neutral-700"
+                                value={settings.depositFixedAmount ?? ''}
+                                onChange={(e) => setSettings({...settings, depositFixedAmount: e.target.value === '' ? null : Number(e.target.value)})}
+                                placeholder="Ej: 21000"
+                            />
+                        )}
+                        <p className="text-[11px] text-gray-400 mt-1">
+                            {depositMode === 'PERCENT'
+                                ? `Seña = ${settings.depositPercentage}% de $${Number(settings.currentPrice).toLocaleString('es-AR')} = $${Math.round(Number(settings.currentPrice) * (Number(settings.depositPercentage)/100)).toLocaleString('es-AR')}`
+                                : `Seña fija de $${Number(settings.depositFixedAmount || 0).toLocaleString('es-AR')} (el saldo restante es $${Math.max(0, Number(settings.currentPrice) - Number(settings.depositFixedAmount || 0)).toLocaleString('es-AR')})`}
+                        </p>
                     </div>
                     <div>
                         <label className="block text-sm font-medium mb-1">Duración Sesión (minutos)</label>

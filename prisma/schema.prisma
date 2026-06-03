@@ -142,6 +142,7 @@ model GlobalSettings {
   currentPrice      Decimal  @default(40000)
   sessionDuration   Int      @default(30)
   depositPercentage Int      @default(50)
+  depositFixedAmount Decimal?            // si está seteado (>0), la seña es este monto fijo en vez del %
   paymentAlias      String?
   paymentCbu        String?
   paymentHolder     String?
